@@ -27,7 +27,7 @@ cp $kernel_elf $img_mnt/kernel
 
 case $mode in
   gpt)
-    mkgpt -o $out --image-size 4096 --part $img --type system
+    mkgpt -o $out --image-size 102400 --part $img --type system
     ;;
   iso)
     mkdir iso
