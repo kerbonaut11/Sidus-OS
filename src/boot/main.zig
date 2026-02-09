@@ -5,26 +5,12 @@ pub const std_options: std.Options = .{
 const uefi = std.os.uefi;
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
 
-pub fn uefiString(comptime str: []const u8) [:0]const u16 {
-    comptime var out: []const u16 = &.{};
-    inline for (str) |ch| out = out ++ &[1]u16{ch};
-    out = out ++ &[1]u16{0};
-    return @ptrCast(out);
-}
-
 pub fn main() uefi.Error!void {
     std.log.debug("Hello, World!", .{});
 
+    @import("load_kernel.zig").loadKernel() catch unreachable;
+
     try uefi.system_table.boot_services.?.stall(5*1000*1000);
-    //const out = uefi.system_table.con_out.?;
-    //const in = uefi.system_table.con_in.?;
-    //const boot_services = uefi.system_table.boot_services.?;
-
-    //const fs = (try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null)).?;
-    //const volume = try fs.openVolume();
-    //const kernel = try volume.open(uefiString("kernel"), .read, .{});
-    //_ = kernel;
-
     //const graphics = (try boot_services.locateProtocol(GraphicsOutput, null)).?;
     //const frame_buffer: []u8 = @as([*]u8, @ptrFromInt(graphics.mode.frame_buffer_base))[0..graphics.mode.frame_buffer_size];
 

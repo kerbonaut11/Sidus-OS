@@ -18,7 +18,7 @@ pub fn logFn(
 ) void {
     stdout.print("{s}", .{message_level.asText()}) catch {};
     if (scope != .default) stdout.print("@{s}", .{@tagName(scope)}) catch {};
-    stdout.print(": "++format, args) catch {};
+    stdout.print(": "++format++"\n", args) catch {};
     stdout.flush() catch {};
 }
 
