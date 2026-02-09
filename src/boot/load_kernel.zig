@@ -28,6 +28,6 @@ fn load(file: *File) Error!void {
     for (0..header.e_phnum) |i| {
         try file.setPosition(header.e_phoff + i*header.e_phentsize);
         const phdr = try readOne(file, Phdr);
-        log.debug("{}", .{phdr});
+        log.debug("vmem 0x{x} @ 0x{x} with aling 0x{}", .{phdr.p_memsz, phdr.p_vaddr, phdr.p_align});
     }
 }

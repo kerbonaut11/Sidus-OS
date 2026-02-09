@@ -41,6 +41,9 @@ pub fn build(b: *Build) void {
     };
     const install_file = b.addInstallFile(image, install_file_name);
     b.getInstallStep().dependOn(&install_file.step);
+
+    const kernel_install = b.addInstallArtifact(kernel, .{});
+    b.step("kernel-elf", "output kernel as elf").dependOn(&kernel_install.step);
 }
 
 pub fn buildBootloader(b: *Build) *Build.Step.Compile {
@@ -52,13 +55,13 @@ pub fn buildBootloader(b: *Build) *Build.Step.Compile {
                 .abi = .msvc,
                 .cpu_arch = .x86_64,
                 .os_tag = .uefi,
-            })
+            }),
         })
     });
 }
 
 pub fn buildKernel(b: *Build) *Build.Step.Compile {
-    return b.addExecutable(.{
+    const exe =  b.addExecutable(.{
         .name = "kernel",
         .root_module = b.addModule("kernel", .{
             .root_source_file = b.path("src/main.zig"),
@@ -67,6 +70,12 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
                 .os_tag = .freestanding,
             }),
             .code_model = .kernel,
-        }),
+            .optimize = .ReleaseSafe,
+            .strip = false,
+        }), 
     });
+
+    exe.setLinkerScript(b.path("src/kernel.ld"));
+
+    return exe;
 }
