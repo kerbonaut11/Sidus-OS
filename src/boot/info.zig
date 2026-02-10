@@ -8,7 +8,7 @@ free_phys_memory: [][]u8,
 var inst: BootInfo = undefined;
 var free_phys_memory_buffer: [64][]u8 = undefined;
 
-pub fn setFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice) !void {
+pub fn setFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice, log: bool) !void {
     var free_phys_memory = std.ArrayList([]u8).initBuffer(@ptrCast(&free_phys_memory_buffer));
 
     var iter = memory_map.iterator();
@@ -30,6 +30,8 @@ pub fn setFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice) !void {
         free_phys_memory.appendAssumeCapacity(slice);
     }
 
+    if (!log) return;
+
     var total_free: usize = 0;
     for (free_phys_memory.items) |e| {
         total_free += e.len;
@@ -39,3 +41,8 @@ pub fn setFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice) !void {
     std.log.info("total free memory: {Bi}", .{total_free});
 }
 
+
+pub fn logFreeMemory() !void {
+    const memory_map = try mem.getMemoryMap();
+    setFreePhysMemory(memory_map, true);
+}

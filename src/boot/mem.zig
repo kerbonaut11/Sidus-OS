@@ -76,7 +76,7 @@ pub fn getMemoryMap() !uefi.tables.MemoryMapSlice {
     const boot_services = uefi.system_table.boot_services.?;
 
     const info = try boot_services.getMemoryMapInfo();
-    const pool = try boot_services.allocatePool(.loader_data, (info.len+16)*info.descriptor_size);
+    const pool = try boot_services.allocatePool(.loader_data, (info.len+32)*info.descriptor_size);
     return try boot_services.getMemoryMap(pool);
 
 }

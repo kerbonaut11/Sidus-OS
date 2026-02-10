@@ -33,8 +33,8 @@ pub fn main() uefi.Error!void {
     );
 
     const memory_map = try mem.getMemoryMap();
-    try BootInfo.setFreePhysMemory(memory_map);
     try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
+    try BootInfo.setFreePhysMemory(memory_map, false);
 
     mem.writeCr3();
 
