@@ -32,6 +32,10 @@ pub fn main() uefi.Error!void {
         .{frame_buffer_info.vertical_resolution, frame_buffer_info.horizontal_resolution, frame_buffer_info.pixel_format, @intFromPtr(frame_buffer.ptr)}
     );
 
+    const log_memory_map = try mem.getMemoryMap();
+    try BootInfo.setFreePhysMemory(log_memory_map, true);
+    try boot_services.freePool(log_memory_map.ptr);
+
     const memory_map = try mem.getMemoryMap();
     try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
     try BootInfo.setFreePhysMemory(memory_map, false);

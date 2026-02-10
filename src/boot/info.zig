@@ -40,9 +40,3 @@ pub fn setFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice, log: bool) !voi
 
     std.log.info("total free memory: {Bi}", .{total_free});
 }
-
-
-pub fn logFreeMemory() !void {
-    const memory_map = try mem.getMemoryMap();
-    setFreePhysMemory(memory_map, true);
-}
