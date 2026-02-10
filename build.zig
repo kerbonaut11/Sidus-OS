@@ -22,9 +22,11 @@ pub fn build(b: *Build) void {
         .iso => make_image.addOutputFileArg("cdimage.iso"),
     };
 
+    const qemu_gdb = b.option(bool, "qemu-gdb", "") orelse false;
     var qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
     qemu_cmd.addArgs(&.{"-smbios", "type=0,uefi=on"});
     qemu_cmd.addArgs(&.{"-bios", ovmf_path});
+    if (qemu_gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
     switch (image_type) {
         .gpt, .img => qemu_cmd.addArg("-hda"),
         .iso => qemu_cmd.addArg("-cdrom"),
@@ -44,6 +46,9 @@ pub fn build(b: *Build) void {
 
     const kernel_install = b.addInstallArtifact(kernel, .{});
     b.step("kernel-elf", "output kernel as elf").dependOn(&kernel_install.step);
+
+    const boot_loader_install = b.addInstallArtifact(boot_loader, .{});
+    b.step("boot-loader-exe", "output bootloader as exe").dependOn(&boot_loader_install.step);
 }
 
 pub fn buildBootloader(b: *Build) *Build.Step.Compile {

@@ -3,33 +3,42 @@ pub const std_options: std.Options = .{
     .logFn = @import("log.zig").logFn,
 };
 const uefi = std.os.uefi;
+const vmem = @import("vmem.zig");
+const exit = @import("exit.zig");
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
 
+fn panicFn(msg: []const u8, _: ?usize) noreturn {
+    const log = @import("log.zig");
+    log.stdout.print("panic: {s}\n", .{msg}) catch {};
+    log.stdout.flush() catch {};
+    std.process.exit(1);
+}
+
+pub const panic = std.debug.FullPanic(panicFn);
+
 pub fn main() uefi.Error!void {
+    const boot_services = uefi.system_table.boot_services.?;
     std.log.debug("Hello, World!", .{});
 
-    @import("load_kernel.zig").loadKernel() catch unreachable;
+    const kernel_entry = @import("load_kernel.zig").loadKernel() catch unreachable;
+    std.log.info("succesfully loaded kernel", .{});
 
-    try uefi.system_table.boot_services.?.stall(5*1000*1000);
-    //const graphics = (try boot_services.locateProtocol(GraphicsOutput, null)).?;
-    //const frame_buffer: []u8 = @as([*]u8, @ptrFromInt(graphics.mode.frame_buffer_base))[0..graphics.mode.frame_buffer_size];
+    const graphics = (try boot_services.locateProtocol(GraphicsOutput, null)).?;
+    const frame_buffer: []u8 = @as([*]u8, @ptrFromInt(graphics.mode.frame_buffer_base))[0..graphics.mode.frame_buffer_size];
+    const frame_buffer_info = graphics.mode.info;
+    std.log.info(
+        "detected {}x{} {} frame buffer at 0x{x}",
+        .{frame_buffer_info.vertical_resolution, frame_buffer_info.horizontal_resolution, frame_buffer_info.pixel_format, @intFromPtr(frame_buffer.ptr)}
+    );
 
-    //var memory_map: [*]uefi.tables.MemoryDescriptor = undefined;
-    //var memory_map_size: usize = 0;
-    //var memory_map_key: uefi.tables.MemoryMapKey = undefined;
-    //var descriptor_size: usize = undefined;
-    //var descriptor_version: u32 = undefined;
-    //std.debug.assert(boot_services._getMemoryMap(&memory_map_size, @ptrCast(&memory_map), &memory_map_key, &descriptor_size, &descriptor_version) == .buffer_too_small);
+    try exit.exitBootServices();
 
-    //const memory_map_slice = try boot_services.getMemoryMap(try boot_services.allocatePool(.boot_services_data, memory_map_size));
-    //var iter = memory_map_slice.iterator();
-    //var fmt_buf: [1024]u8 = undefined;
-    //while (iter.next()) |e| {
-        //const fmt = std.fmt.bufPrint(&fmt_buf, "{x}..{x}\r\n", .{e.physical_start, e.physical_start+e.number_of_pages*4096}) catch unreachable;
-        //for (fmt) |ch| _ = try out.outputString(&.{ch, 0});
-    //}
+    vmem.writeCr3();
 
-    //try boot_services.exitBootServices(uefi.handle, memory_map_slice.info.key);
+    asm volatile (
+        \\jmp *%rax
+        :: [kernel_entry] "{rax}" (kernel_entry)
+    );
 
-    //@memset(frame_buffer, 0xff);
+    unreachable;
 }
