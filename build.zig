@@ -26,6 +26,7 @@ pub fn build(b: *Build) void {
     var qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
     qemu_cmd.addArgs(&.{"-smbios", "type=0,uefi=on"});
     qemu_cmd.addArgs(&.{"-bios", ovmf_path});
+    qemu_cmd.addArgs(&.{"-m", "256M"});
     if (qemu_gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
     switch (image_type) {
         .gpt, .img => qemu_cmd.addArg("-hda"),

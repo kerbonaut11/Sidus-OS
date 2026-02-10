@@ -25,6 +25,7 @@ pub const Table = *align(page_size) [512]Entry;
 
 pub fn allocTable() !Table {
     const boot_services = uefi.system_table.boot_services.?;
+
     const bytes = try boot_services.allocatePages(.any, .loader_data, 1);
     @memset(&bytes[0], 0);
     return @ptrCast(bytes.ptr);
@@ -47,7 +48,7 @@ pub fn mapPage(paddr: usize, vaddr: usize) !void {
         @memcpy(l4.?, uefi_l4);
         break :blk l4.?;
     };
-    
+
     const parts = [4]u9{
         @truncate(vaddr >> (12+9*3)),
         @truncate(vaddr >> (12+9*2)),
@@ -68,6 +69,16 @@ pub fn mapPage(paddr: usize, vaddr: usize) !void {
 
     std.debug.assert(!table[parts[3]].present);
     table[parts[3]] = Entry{.addr = @intCast(paddr >> 12)};
+}
+
+
+pub fn getMemoryMap() !uefi.tables.MemoryMapSlice {
+    const boot_services = uefi.system_table.boot_services.?;
+
+    const info = try boot_services.getMemoryMapInfo();
+    const pool = try boot_services.allocatePool(.loader_data, (info.len+16)*info.descriptor_size);
+    return try boot_services.getMemoryMap(pool);
+
 }
 
 pub fn writeCr3() void {

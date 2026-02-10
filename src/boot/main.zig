@@ -3,9 +3,10 @@ pub const std_options: std.Options = .{
     .logFn = @import("log.zig").logFn,
 };
 const uefi = std.os.uefi;
-const vmem = @import("vmem.zig");
-const exit = @import("exit.zig");
+const mem = @import("mem.zig");
+const BootInfo = @import("info.zig");
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
+const DevicePath = uefi.protocol.DevicePath;
 
 fn panicFn(msg: []const u8, _: ?usize) noreturn {
     const log = @import("log.zig");
@@ -31,9 +32,11 @@ pub fn main() uefi.Error!void {
         .{frame_buffer_info.vertical_resolution, frame_buffer_info.horizontal_resolution, frame_buffer_info.pixel_format, @intFromPtr(frame_buffer.ptr)}
     );
 
-    try exit.exitBootServices();
+    const memory_map = try mem.getMemoryMap();
+    try BootInfo.setFreePhysMemory(memory_map);
+    try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
 
-    vmem.writeCr3();
+    mem.writeCr3();
 
     asm volatile (
         \\jmp *%rax

@@ -6,7 +6,7 @@ const elf = std.elf;
 const util = @import("util.zig");
 const readAll = util.readAll;
 const readOne = util.readOne;
-const vmem = @import("vmem.zig");
+const vmem = @import("mem.zig");
 
 const Ehdr = elf.Elf64_Ehdr;
 const Phdr = elf.Elf64_Phdr;
@@ -37,11 +37,11 @@ fn load(file: *File) Error!usize {
         log.debug("vmem 0x{x} @ 0x{x} with aling 0x{}", .{phdr.p_memsz, phdr.p_vaddr, phdr.p_align});
 
         const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
-        const mem = try boot_services.allocatePages(.any, .loader_code, pages);
-        try vmem.map(@intFromPtr(mem.ptr), phdr.p_vaddr, pages);
+        const segment_data = try boot_services.allocatePages(.any, .loader_code, pages);
+        try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages);
 
         try file.setPosition(phdr.p_offset);
-        try readAll(file, @as([*]u8, @ptrCast(mem.ptr))[0..phdr.p_filesz]);
+        try readAll(file, @as([*]u8, @ptrCast(segment_data.ptr))[0..phdr.p_filesz]);
 
         log.debug("copied 0x{} bytes from kernel elf", .{phdr.p_memsz});
     }
