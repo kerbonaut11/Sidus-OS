@@ -2,8 +2,13 @@ const std = @import("std");
 const uefi = std.os.uefi;
 const log = std.log.scoped(.vmem);
 
-pub const page_size = std.heap.pageSize();
-var l4: ?Table = null;
+pub fn allocTable() !Table {
+    const boot_services = uefi.system_table.boot_services.?;
+
+    const bytes = try boot_services.allocatePages(.any, .loader_data, 1);
+    @memset(&bytes[0], 0);
+    return @ptrCast(bytes.ptr);
+}
 
 pub const Entry = packed struct(u64) {
     present: bool = true,
@@ -19,58 +24,92 @@ pub const Entry = packed struct(u64) {
     addr: u40,
     _pad: u11 = 0,
     execute_disable: bool = false,
+
+    pub fn getAddr(e: Entry) usize {
+        return @as(usize, e.addr) << 12;
+    }
+
+    pub fn getOrAllocTable(e: *Entry) !Table {
+        if (e.present) {
+            return @ptrFromInt(e.getAddr());
+        }
+
+        const new = try allocTable();
+        e.* = .{.addr = @truncate(@intFromPtr(new) >> 12)};
+        return new;
+    }
 };
 
-pub const Table = *align(page_size) [512]Entry;
+pub const page_size = std.heap.pageSize();
+const table_size = 512;
+pub const Table = *align(page_size) [table_size]Entry;
+var l4_table: Table = undefined;
 
-pub fn allocTable() !Table {
-    const boot_services = uefi.system_table.boot_services.?;
+pub fn init() !void {
+    l4_table = try allocTable();
+    @memcpy(l4_table, getL4());
+}
 
-    const bytes = try boot_services.allocatePages(.any, .loader_data, 1);
-    @memset(&bytes[0], 0);
-    return @ptrCast(bytes.ptr);
+pub fn enableNewMmap() void {
+    setL4(l4_table);
 }
 
 pub fn map(paddr: usize, vaddr: usize, pages: usize) !void {
-    for (0..pages) |i| {
-        try mapPage(paddr+i*page_size, vaddr+i*page_size);
-    }
-}
-
-pub fn mapPage(paddr: usize, vaddr: usize) !void {
-    log.debug("mapping 0x{x} to 0x{x}", .{paddr, vaddr});
     std.debug.assert(std.mem.isAligned(paddr, page_size));
     std.debug.assert(std.mem.isAligned(vaddr, page_size));
 
-    var table = l4 orelse blk: {
-        const uefi_l4 = readCr3();
-        l4 = try allocTable();
-        @memcpy(l4.?, uefi_l4);
-        break :blk l4.?;
-    };
+    const l4_idx: u9 = @truncate(vaddr >> (12+9*3));
+    var l3_idx: u9 = @truncate(vaddr >> (12+9*2));
+    var l2_idx: u9 = @truncate(vaddr >> (12+9*1));
+    var l1_idx: u9 = @truncate(vaddr >> (12+9*0));
+    log.debug("{} {} {} {}", .{l4_idx, l3_idx, l2_idx, l1_idx});
+    var l3_table = try l4_table[l4_idx].getOrAllocTable();
+    var l2_table = try l3_table[l3_idx].getOrAllocTable();
+    var l1_table = try l2_table[l2_idx].getOrAllocTable();
+    log.debug("{*} {*} {*} {*}", .{l4_table, l3_table, l2_table, l1_table});
 
-    const parts = [4]u9{
-        @truncate(vaddr >> (12+9*3)),
-        @truncate(vaddr >> (12+9*2)),
-        @truncate(vaddr >> (12+9*1)),
-        @truncate(vaddr >> (12+9*0)),
-    };
+    var pages_maped: usize = 0;
+    while (pages_maped != pages) {
+        const addr: u40 = @truncate((paddr >> 12) + pages_maped);
 
-    for (parts[0..3]) |part| {
-        if (!table[part].present) {
-            const new_table = try allocTable();
-            table[part] = Entry{.addr = @intCast(@intFromPtr(new_table) >> 12)};
-            log.debug("0x{x}", .{@intFromPtr(new_table)});
-            table = new_table;
+        if (l1_idx == 0 and (pages-pages_maped) >= table_size) {
+            log.debug("maped 2Mib page at 0x{x} to 0x{x}000", .{vaddr+pages_maped*page_size, addr});
+            l2_table[l2_idx] = .{.addr = addr, .leaf = true};
+            pages_maped += table_size;
         } else {
-            table = @ptrFromInt(@as(usize, table[part].addr) << 12);
+            log.debug("maped 1Kib page at 0x{x} to 0x{x}000", .{vaddr+pages_maped*page_size, addr});
+            l1_table[l1_idx] = .{.addr = addr};
+            pages_maped += 1;
+            l1_idx +%= 1;
         }
-    }
 
-    std.debug.assert(!table[parts[3]].present);
-    table[parts[3]] = Entry{.addr = @intCast(paddr >> 12)};
+        if (l1_idx == 0) {
+            l2_idx +%= 1;
+            l1_table = try l2_table[l2_idx].getOrAllocTable();
+        }
+
+        if (l2_idx == 0) {
+            l3_idx += 1;
+            l2_table = try l3_table[l3_idx].getOrAllocTable();
+        }
+
+    }
 }
 
+
+pub fn setL4(table: Table) void {
+    asm volatile (
+        \\movq %rax, %cr3
+        :: [l4] "{rax}" (table)
+    );
+}
+
+pub fn getL4() Table {
+    return asm volatile (
+        \\movq %cr3, %rax
+        : [l4] "={rax}" (->Table)
+    );
+}
 
 pub fn getMemoryMap() !uefi.tables.MemoryMapSlice {
     const boot_services = uefi.system_table.boot_services.?;
@@ -78,19 +117,4 @@ pub fn getMemoryMap() !uefi.tables.MemoryMapSlice {
     const info = try boot_services.getMemoryMapInfo();
     const pool = try boot_services.allocatePool(.loader_data, (info.len+32)*info.descriptor_size);
     return try boot_services.getMemoryMap(pool);
-
-}
-
-pub fn writeCr3() void {
-    asm volatile (
-        \\movq %rax, %cr3
-        :: [l4] "{rax}" (l4)
-    );
-}
-
-pub fn readCr3() Table {
-    return asm volatile (
-        \\movq %cr3, %rax
-        : [l4] "={rax}" (->Table)
-    );
 }

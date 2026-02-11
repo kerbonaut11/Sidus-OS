@@ -21,15 +21,16 @@ pub fn main() uefi.Error!void {
     const boot_services = uefi.system_table.boot_services.?;
     std.log.debug("Hello, World!", .{});
 
+    try mem.init();
     const kernel_entry = @import("load_kernel.zig").loadKernel() catch unreachable;
     std.log.info("succesfully loaded kernel", .{});
 
     const graphics = (try boot_services.locateProtocol(GraphicsOutput, null)).?;
+    const info = graphics.mode.info;
     const frame_buffer: []u8 = @as([*]u8, @ptrFromInt(graphics.mode.frame_buffer_base))[0..graphics.mode.frame_buffer_size];
-    const frame_buffer_info = graphics.mode.info;
     std.log.info(
         "detected {}x{} {} frame buffer at 0x{x}",
-        .{frame_buffer_info.vertical_resolution, frame_buffer_info.horizontal_resolution, frame_buffer_info.pixel_format, @intFromPtr(frame_buffer.ptr)}
+        .{info.horizontal_resolution, info.vertical_resolution, info.pixel_format, @intFromPtr(frame_buffer.ptr)}
     );
 
     const log_memory_map = try mem.getMemoryMap();
@@ -38,9 +39,8 @@ pub fn main() uefi.Error!void {
 
     const memory_map = try mem.getMemoryMap();
     try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
+    mem.enableNewMmap();
     try BootInfo.setFreePhysMemory(memory_map, false);
-
-    mem.writeCr3();
 
     asm volatile (
         \\jmp *%rax
