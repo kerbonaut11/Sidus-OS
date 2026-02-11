@@ -41,6 +41,7 @@ pub const Entry = packed struct(u64) {
 };
 
 pub const page_size = std.heap.pageSize();
+pub const mega_page_size= table_size*std.heap.pageSize();
 const table_size = 512;
 pub const Table = *align(page_size) [table_size]Entry;
 var l4_table: Table = undefined;
@@ -51,8 +52,21 @@ pub fn init() !void {
     setL4(l4_table);
 }
 
-pub fn map(paddr: usize, vaddr: usize, pages: usize, write: bool, execute: bool) !void {
-    std.debug.assert(std.mem.isAligned(paddr, page_size));
+fn allocMegaPage() !usize {
+    const boot_services = uefi.system_table.boot_services.?;
+
+    const over_alloc = try boot_services.allocatePages(.any, .loader_data, 2*table_size);
+    const alread_aligened = @intFromPtr(over_alloc.ptr) % mega_page_size == 0;
+    const num_unaligend_pages_before = if (alread_aligened) 0 else @divExact(mega_page_size-@intFromPtr(over_alloc.ptr)%mega_page_size, page_size);
+
+    try boot_services.freePages(over_alloc[0..num_unaligend_pages_before]);
+    try boot_services.freePages(over_alloc[num_unaligend_pages_before+table_size..]);
+
+    return @intFromPtr(over_alloc.ptr)+num_unaligend_pages_before*page_size;
+}
+
+pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
+    const boot_services = uefi.system_table.boot_services.?;
     std.debug.assert(std.mem.isAligned(vaddr, page_size));
 
     const l4_idx: u9 = @truncate(vaddr >> (12+9*3));
@@ -63,31 +77,37 @@ pub fn map(paddr: usize, vaddr: usize, pages: usize, write: bool, execute: bool)
     var l2_table = try l3_table[l3_idx].getOrAllocTable();
     var l1_table = try l2_table[l2_idx].getOrAllocTable();
 
-    var pages_maped: usize = 0;
-    while (pages_maped != pages) {
-        const map_2mib_page = l1_idx == 0 and (pages-pages_maped) >= table_size and false;
+    var pages_left: usize = pages;
+    while (pages_left != 0) {
+        const map_2mib_page = l1_idx == 0 and pages_left >= table_size;
 
-        var new_entry = Entry{
-            .addr = @truncate((paddr >> 12) + pages_maped),
+        const phys_mem = if (!map_2mib_page)
+            @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr)
+        else 
+            try allocMegaPage();
+
+        if (map_2mib_page) std.debug.assert(std.mem.isAligned(phys_mem, mega_page_size));
+
+        const new_entry = Entry{
+            .addr = @truncate(phys_mem >> 12),
             .write = write,
             .execute_disable = !execute,
             .leaf = map_2mib_page,
         };
 
         if (map_2mib_page) {
-            new_entry.leaf = true;
             l2_table[l2_idx] = new_entry;
-            pages_maped += table_size;
+            pages_left -= table_size;
         } else {
             l1_table[l1_idx] = new_entry;
-            pages_maped += 1;
+            pages_left -= 1;
             l1_idx +%= 1;
         }
 
-        //log.debug(
-        //  "maped {s} page at 0x{x} to 0x{x}000",
-        //  .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+pages_maped*page_size, new_entry.addr}
-        //);
+        log.debug(
+          "maped {s} page at 0x{x} to 0x{x}000",
+          .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+(pages-pages_left)*page_size, new_entry.addr}
+        );
 
         if (l1_idx == 0 or map_2mib_page) {
             l2_idx +%= 1;

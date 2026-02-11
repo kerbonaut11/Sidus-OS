@@ -24,8 +24,6 @@ pub fn loadKernel() Error!usize {
 }
 
 fn load(file: *File) Error!usize {
-    const boot_services = uefi.system_table.boot_services.?;
-
     const header: Ehdr = try readOne(file, Ehdr);
 
     const Range = struct {start: usize, end: usize};
@@ -37,7 +35,7 @@ fn load(file: *File) Error!usize {
         const phdr = try readOne(file, Phdr);
 
         if (phdr.p_type != elf.PT_LOAD) continue;
-        log.debug("0x{x} byte section @ 0x{x} with aling 0x{x}", .{phdr.p_memsz, phdr.p_vaddr, phdr.p_align});
+        log.debug("0x{x} byte section @ 0x{x}", .{phdr.p_memsz, phdr.p_vaddr});
 
         var already_mapped = false;
         for (already_mapped_ranges.items) |range| {
@@ -50,9 +48,8 @@ fn load(file: *File) Error!usize {
 
         if (!already_mapped) {
             const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
-            const segment_data = try boot_services.allocatePages(.any, .loader_code, pages);
             const execute = phdr.p_flags & elf.PF_X != 0;
-            try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages, true, execute);
+            try vmem.createMap(phdr.p_vaddr, pages, true, execute);
 
             already_mapped_ranges.appendAssumeCapacity(.{.start = phdr.p_vaddr, .end = phdr.p_vaddr+pages*vmem.page_size});
         }
