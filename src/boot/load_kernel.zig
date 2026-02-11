@@ -27,7 +27,6 @@ fn load(file: *File) Error!usize {
     const boot_services = uefi.system_table.boot_services.?;
 
     const header: Ehdr = try readOne(file, Ehdr);
-    log.debug("{}", .{header.e_machine});
 
     for (0..header.e_phnum) |i| {
         try file.setPosition(header.e_phoff + i*header.e_phentsize);
@@ -38,7 +37,9 @@ fn load(file: *File) Error!usize {
 
         const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
         const segment_data = try boot_services.allocatePages(.any, .loader_code, pages);
-        try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages);
+        const write   = phdr.p_flags & elf.PF_W != 0;
+        const execute = phdr.p_flags & elf.PF_X != 0;
+        try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages, write, execute);
 
         try file.setPosition(phdr.p_offset);
         try readAll(file, @as([*]u8, @ptrCast(segment_data.ptr))[0..phdr.p_filesz]);

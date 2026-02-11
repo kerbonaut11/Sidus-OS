@@ -12,7 +12,7 @@ pub fn allocTable() !Table {
 
 pub const Entry = packed struct(u64) {
     present: bool = true,
-    read_write: bool = true,
+    write: bool = true,
     user: bool = false,
     write_through: bool = false,
     chace_disable: bool = false,
@@ -54,7 +54,7 @@ pub fn enableNewMmap() void {
     setL4(l4_table);
 }
 
-pub fn map(paddr: usize, vaddr: usize, pages: usize) !void {
+pub fn map(paddr: usize, vaddr: usize, pages: usize, write: bool, execute: bool) !void {
     std.debug.assert(std.mem.isAligned(paddr, page_size));
     std.debug.assert(std.mem.isAligned(vaddr, page_size));
 
@@ -62,26 +62,35 @@ pub fn map(paddr: usize, vaddr: usize, pages: usize) !void {
     var l3_idx: u9 = @truncate(vaddr >> (12+9*2));
     var l2_idx: u9 = @truncate(vaddr >> (12+9*1));
     var l1_idx: u9 = @truncate(vaddr >> (12+9*0));
-    log.debug("{} {} {} {}", .{l4_idx, l3_idx, l2_idx, l1_idx});
     var l3_table = try l4_table[l4_idx].getOrAllocTable();
     var l2_table = try l3_table[l3_idx].getOrAllocTable();
     var l1_table = try l2_table[l2_idx].getOrAllocTable();
-    log.debug("{*} {*} {*} {*}", .{l4_table, l3_table, l2_table, l1_table});
 
     var pages_maped: usize = 0;
     while (pages_maped != pages) {
-        const addr: u40 = @truncate((paddr >> 12) + pages_maped);
+        const map_2mib_page = l1_idx == 0 and (pages-pages_maped) >= table_size;
 
-        if (l1_idx == 0 and (pages-pages_maped) >= table_size) {
-            log.debug("maped 2Mib page at 0x{x} to 0x{x}000", .{vaddr+pages_maped*page_size, addr});
-            l2_table[l2_idx] = .{.addr = addr, .leaf = true};
+        var new_entry = Entry{
+            .addr = @truncate((paddr >> 12) + pages_maped),
+            .write = write,
+            .execute_disable = !execute,
+            .leaf = map_2mib_page,
+        };
+
+        if (map_2mib_page) {
+            new_entry.leaf = true;
+            l2_table[l2_idx] = new_entry;
             pages_maped += table_size;
         } else {
-            log.debug("maped 1Kib page at 0x{x} to 0x{x}000", .{vaddr+pages_maped*page_size, addr});
-            l1_table[l1_idx] = .{.addr = addr};
+            l1_table[l1_idx] = new_entry;
             pages_maped += 1;
             l1_idx +%= 1;
         }
+
+        log.debug(
+            "maped {s} page at 0x{x} to 0x{x}000",
+            .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+pages_maped*page_size, new_entry.addr}
+        );
 
         if (l1_idx == 0) {
             l2_idx +%= 1;
