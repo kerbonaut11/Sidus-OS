@@ -76,6 +76,7 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
                 .os_tag = .freestanding,
             }),
             .code_model = .kernel,
+            .pic = true,
             .optimize = .ReleaseSafe,
             .strip = false,
         }), 
