@@ -28,21 +28,37 @@ fn load(file: *File) Error!usize {
 
     const header: Ehdr = try readOne(file, Ehdr);
 
+    const Range = struct {start: usize, end: usize};
+    var buffer: [128]Range = undefined;
+    var already_mapped_ranges = std.ArrayList(Range).initBuffer(&buffer);
+
     for (0..header.e_phnum) |i| {
         try file.setPosition(header.e_phoff + i*header.e_phentsize);
         const phdr = try readOne(file, Phdr);
 
-        if (phdr.p_type == elf.PT_GNU_EH_FRAME or phdr.p_type == elf.PT_GNU_STACK) continue;
-        log.debug("vmem 0x{x} @ 0x{x} with aling 0x{}", .{phdr.p_memsz, phdr.p_vaddr, phdr.p_align});
+        if (phdr.p_type != elf.PT_LOAD) continue;
+        log.debug("0x{x} byte section @ 0x{x} with aling 0x{x}", .{phdr.p_memsz, phdr.p_vaddr, phdr.p_align});
 
-        const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
-        const segment_data = try boot_services.allocatePages(.any, .loader_code, pages);
-        const write   = phdr.p_flags & elf.PF_W != 0;
-        const execute = phdr.p_flags & elf.PF_X != 0;
-        try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages, write, execute);
+        var already_mapped = false;
+        for (already_mapped_ranges.items) |range| {
+            if (phdr.p_vaddr >= range.start and phdr.p_vaddr < range.end) {
+                already_mapped = true;
+                std.debug.assert(phdr.p_vaddr+phdr.p_memsz < range.end);
+                break;
+            }
+        }
+
+        if (!already_mapped) {
+            const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
+            const segment_data = try boot_services.allocatePages(.any, .loader_code, pages);
+            const execute = phdr.p_flags & elf.PF_X != 0;
+            try vmem.map(@intFromPtr(segment_data.ptr), phdr.p_vaddr, pages, true, execute);
+
+            already_mapped_ranges.appendAssumeCapacity(.{.start = phdr.p_vaddr, .end = phdr.p_vaddr+pages*vmem.page_size});
+        }
 
         try file.setPosition(phdr.p_offset);
-        try readAll(file, @as([*]u8, @ptrCast(segment_data.ptr))[0..phdr.p_filesz]);
+        try readAll(file, @as([*]u8, @ptrFromInt(phdr.p_vaddr))[0..phdr.p_filesz]);
 
         log.debug("copied 0x{} bytes from kernel elf", .{phdr.p_memsz});
     }

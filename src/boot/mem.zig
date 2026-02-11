@@ -48,9 +48,6 @@ var l4_table: Table = undefined;
 pub fn init() !void {
     l4_table = try allocTable();
     @memcpy(l4_table, getL4());
-}
-
-pub fn enableNewMmap() void {
     setL4(l4_table);
 }
 
@@ -68,7 +65,7 @@ pub fn map(paddr: usize, vaddr: usize, pages: usize, write: bool, execute: bool)
 
     var pages_maped: usize = 0;
     while (pages_maped != pages) {
-        const map_2mib_page = l1_idx == 0 and (pages-pages_maped) >= table_size;
+        const map_2mib_page = l1_idx == 0 and (pages-pages_maped) >= table_size and false;
 
         var new_entry = Entry{
             .addr = @truncate((paddr >> 12) + pages_maped),
@@ -87,12 +84,12 @@ pub fn map(paddr: usize, vaddr: usize, pages: usize, write: bool, execute: bool)
             l1_idx +%= 1;
         }
 
-        log.debug(
-            "maped {s} page at 0x{x} to 0x{x}000",
-            .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+pages_maped*page_size, new_entry.addr}
-        );
+        //log.debug(
+        //  "maped {s} page at 0x{x} to 0x{x}000",
+        //  .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+pages_maped*page_size, new_entry.addr}
+        //);
 
-        if (l1_idx == 0) {
+        if (l1_idx == 0 or map_2mib_page) {
             l2_idx +%= 1;
             l1_table = try l2_table[l2_idx].getOrAllocTable();
         }

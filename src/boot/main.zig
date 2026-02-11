@@ -39,7 +39,6 @@ pub fn main() uefi.Error!void {
 
     const memory_map = try mem.getMemoryMap();
     try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
-    mem.enableNewMmap();
     try BootInfo.setFreePhysMemory(memory_map, false);
 
     asm volatile (
