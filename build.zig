@@ -70,7 +70,7 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
     const exe =  b.addExecutable(.{
         .name = "kernel",
         .root_module = b.addModule("kernel", .{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/kernel/main.zig"),
             .target = b.resolveTargetQuery(.{
                 .cpu_arch = .x86_64,
                 .os_tag = .freestanding,
@@ -81,7 +81,7 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
         }), 
     });
 
-    exe.setLinkerScript(b.path("src/kernel.ld"));
+    exe.setLinkerScript(b.path("src/kernel/linker.ld"));
 
     return exe;
 }
