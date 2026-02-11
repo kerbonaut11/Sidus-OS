@@ -47,6 +47,7 @@ pub fn build(b: *Build) void {
 
     const kernel_install = b.addInstallArtifact(kernel, .{});
     b.step("kernel-elf", "output kernel as elf").dependOn(&kernel_install.step);
+    if (qemu_gdb) qemu_cmd.step.dependOn(&kernel_install.step);
 
     const boot_loader_install = b.addInstallArtifact(boot_loader, .{});
     b.step("boot-loader-exe", "output bootloader as exe").dependOn(&boot_loader_install.step);

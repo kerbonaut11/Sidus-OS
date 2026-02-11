@@ -1,14 +1,23 @@
+const std = @import("std");
+const log = @import("log.zig");
+pub const std_options: std.Options = .{
+    .log_level = .debug,
+    .logFn = log.logFn,
+};
+
 var stack: [8*1024*1024]u8 align(4096) = undefined;
 
 export fn _start() callconv(.naked) noreturn {
     asm volatile (
         \\movq %[stack_top], %rsp
+        \\movq %rsp, %rbp
+        \\call main
         :: [stack_top] "r" (@intFromPtr(&stack)+@sizeOf(@TypeOf(stack)))
     );
-    asm volatile (
-        \\outb %[val], %[port]
-        :: [val] "{al} "(@as(u8, 'a')), [port] "N{dx} "(@as(u16, 0x3f8))
-    );
+}
 
+export fn main() noreturn {
+    log.init(@import("drivers/uart16550.zig").init());
+    std.log.debug("Hello, World!", .{});
     while (true) {}
 }
