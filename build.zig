@@ -22,12 +22,17 @@ pub fn build(b: *Build) void {
         .iso => make_image.addOutputFileArg("cdimage.iso"),
     };
 
-    const qemu_gdb = b.option(bool, "qemu-gdb", "") orelse false;
+    const gdb = b.option(bool, "gdb", "enbale QEMU gdb debugging") orelse false;
+    const kvm = b.option(bool, "kvm", "make QEMU use KVM") orelse true;
+
     var qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
     qemu_cmd.addArgs(&.{"-smbios", "type=0,uefi=on"});
     qemu_cmd.addArgs(&.{"-bios", ovmf_path});
     qemu_cmd.addArgs(&.{"-m", "256M"});
-    if (qemu_gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
+
+    if (kvm) qemu_cmd.addArgs(&.{"-enable-kvm", "-cpu", "host"});
+    if (gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
+
     switch (image_type) {
         .gpt, .img => qemu_cmd.addArg("-hda"),
         .iso => qemu_cmd.addArg("-cdrom"),
@@ -47,7 +52,7 @@ pub fn build(b: *Build) void {
 
     const kernel_install = b.addInstallArtifact(kernel, .{});
     b.step("kernel-elf", "output kernel as elf").dependOn(&kernel_install.step);
-    if (qemu_gdb) qemu_cmd.step.dependOn(&kernel_install.step);
+    if (gdb) qemu_cmd.step.dependOn(&kernel_install.step);
 
     const boot_loader_install = b.addInstallArtifact(boot_loader, .{});
     b.step("boot-loader-exe", "output bootloader as exe").dependOn(&boot_loader_install.step);
