@@ -31,6 +31,7 @@ pub const Entry = packed struct(u64) {
 
     pub fn getOrAllocTable(e: *Entry) !Table {
         if (e.present) {
+            std.debug.assert(!e.leaf);
             return @ptrFromInt(e.getAddr());
         }
 
@@ -75,16 +76,16 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
     var l1_idx: u9 = @truncate(vaddr >> (12+9*0));
     var l3_table = try l4_table[l4_idx].getOrAllocTable();
     var l2_table = try l3_table[l3_idx].getOrAllocTable();
-    var l1_table = try l2_table[l2_idx].getOrAllocTable();
 
     var pages_left: usize = pages;
     while (pages_left != 0) {
         const map_2mib_page = l1_idx == 0 and pages_left >= table_size;
+        const l1_table = if (!map_2mib_page) try l2_table[l2_idx].getOrAllocTable() else null;
 
-        const phys_mem = if (!map_2mib_page)
-            @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr)
+        const phys_mem = if (map_2mib_page)
+            try allocMegaPage()
         else 
-            try allocMegaPage();
+            @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr);
 
         if (map_2mib_page) std.debug.assert(std.mem.isAligned(phys_mem, mega_page_size));
 
@@ -95,11 +96,15 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
             .leaf = map_2mib_page,
         };
 
+        log.debug("{} {} {} {} {}", .{map_2mib_page, l1_idx, l2_idx, l3_idx, l4_idx});
+
         if (map_2mib_page) {
+            std.debug.assert(!l2_table[l2_idx].present);
             l2_table[l2_idx] = new_entry;
             pages_left -= table_size;
         } else {
-            l1_table[l1_idx] = new_entry;
+            std.debug.assert(!l1_table.?[l1_idx].present);
+            l1_table.?[l1_idx] = new_entry;
             pages_left -= 1;
             l1_idx +%= 1;
         }
@@ -111,14 +116,11 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
 
         if (l1_idx == 0 or map_2mib_page) {
             l2_idx +%= 1;
-            l1_table = try l2_table[l2_idx].getOrAllocTable();
+            if (l2_idx == 0) {
+                l3_idx += 1;
+                l2_table = try l3_table[l3_idx].getOrAllocTable();
+            }
         }
-
-        if (l2_idx == 0) {
-            l3_idx += 1;
-            l2_table = try l3_table[l3_idx].getOrAllocTable();
-        }
-
     }
 }
 

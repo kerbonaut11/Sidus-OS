@@ -6,7 +6,7 @@ const elf = std.elf;
 const util = @import("util.zig");
 const readAll = util.readAll;
 const readOne = util.readOne;
-const vmem = @import("mem.zig");
+const mem = @import("mem.zig");
 
 const Ehdr = elf.Elf64_Ehdr;
 const Phdr = elf.Elf64_Phdr;
@@ -37,22 +37,32 @@ fn load(file: *File) Error!usize {
         if (phdr.p_type != elf.PT_LOAD) continue;
         log.debug("0x{x} byte section @ 0x{x}", .{phdr.p_memsz, phdr.p_vaddr});
 
-        var already_mapped = false;
+        const align_back = phdr.p_vaddr % mem.page_size;
+        const num_pages = std.mem.alignForward(usize, phdr.p_memsz, mem.page_size)/mem.page_size;
+        var map_range = Range{
+            .start = phdr.p_vaddr - align_back,
+            .end = phdr.p_vaddr - align_back + num_pages*mem.page_size,
+        };
+
         for (already_mapped_ranges.items) |range| {
-            if (phdr.p_vaddr >= range.start and phdr.p_vaddr < range.end) {
-                already_mapped = true;
-                std.debug.assert(phdr.p_vaddr+phdr.p_memsz < range.end);
+            const start_in_range = map_range.start >= range.start and map_range.start < range.end;
+            const end_in_range = map_range.end >= range.start and map_range.end < range.end;
+            if (start_in_range and end_in_range) {
+                map_range.start = 0;
+                map_range.end = 0;
                 break;
+            } else if (start_in_range) {
+                map_range.start = range.end;
+            } else if (end_in_range) {
+                map_range.end = range.start;
             }
         }
 
-        if (!already_mapped) {
-            const pages = std.mem.alignForward(usize, phdr.p_memsz, vmem.page_size)/vmem.page_size;
-            const execute = phdr.p_flags & elf.PF_X != 0;
-            try vmem.createMap(phdr.p_vaddr, pages, true, execute);
+        log.debug("{x} {x}", .{map_range.start, map_range.end});
+        const execute = phdr.p_flags & elf.PF_X != 0;
+        try mem.createMap(map_range.start, @divExact(map_range.end-map_range.start, mem.page_size), true, execute);
 
-            already_mapped_ranges.appendAssumeCapacity(.{.start = phdr.p_vaddr, .end = phdr.p_vaddr+pages*vmem.page_size});
-        }
+        already_mapped_ranges.appendAssumeCapacity(map_range);
 
         try file.setPosition(phdr.p_offset);
         try readAll(file, @as([*]u8, @ptrFromInt(phdr.p_vaddr))[0..phdr.p_filesz]);
