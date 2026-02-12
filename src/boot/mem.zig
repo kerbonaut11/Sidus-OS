@@ -96,8 +96,6 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
             .leaf = map_2mib_page,
         };
 
-        log.debug("{} {} {} {} {}", .{map_2mib_page, l1_idx, l2_idx, l3_idx, l4_idx});
-
         if (map_2mib_page) {
             std.debug.assert(!l2_table[l2_idx].present);
             l2_table[l2_idx] = new_entry;
