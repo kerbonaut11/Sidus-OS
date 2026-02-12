@@ -30,11 +30,12 @@ pub fn initFrameBuffer() !void {
     const boot_services = uefi.system_table.boot_services.?;
     const graphics = (try boot_services.locateProtocol(GraphicsOutput, null)).?;
     const info = graphics.mode.info;
+    const bytes_per_pixel = 4;
     instance.frame_buffer = .{
         .width = info.pixels_per_scan_line,
         .height = info.vertical_resolution,
         .base_addr = graphics.mode.frame_buffer_base,
-        .bytes_per_row = info.horizontal_resolution,
+        .bytes_per_row = info.horizontal_resolution*bytes_per_pixel,
         .format = switch (info.pixel_format) {
             .red_green_blue_reserved_8_bit_per_color => .rbga8,
             .blue_green_red_reserved_8_bit_per_color => .bgra8,
