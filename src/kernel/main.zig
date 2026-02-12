@@ -12,12 +12,14 @@ export fn _start() callconv(.naked) noreturn {
         \\movq %[stack_top], %rsp
         \\movq %rsp, %rbp
         \\call main
-        :: [stack_top] "r" (@intFromPtr(&stack)+@sizeOf(@TypeOf(stack)))
+        :: [stack_top] "r" (@intFromPtr(&stack)+@sizeOf(@TypeOf(stack))),
     );
 }
 
-export fn main() noreturn {
+export fn main(boot_info: *@import("BootInfo")) callconv(.c) noreturn {
     log.init(@import("drivers/uart16550.zig").init());
     std.log.debug("Hello, World!", .{});
+    std.log.debug("{*}", .{boot_info});
+    @import("pci.zig").lspci();
     while (true) {}
 }

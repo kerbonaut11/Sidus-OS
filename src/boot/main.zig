@@ -25,15 +25,16 @@ pub fn main() uefi.Error!void {
     std.log.info("succesfully loaded kernel", .{});
 
     try BootInfo.alloc();
+    std.log.debug("{*}", .{BootInfo.instance});
     try BootInfo.initFrameBuffer();
     const memory_map = try mem.getMemoryMap();
     try BootInfo.initFreePhysMemory(memory_map);
     try boot_services.exitBootServices(uefi.handle, memory_map.info.key);
 
     asm volatile (
-        \\mov %rdi, %[boot_info]
         \\jmp *%[kernel_entry]
-        :: [kernel_entry] "r" (kernel_entry), [boot_info] "r" (BootInfo.instance)
+        :: [kernel_entry] "{rax}" (kernel_entry), [boot_info] "{rdi}" (BootInfo.instance) 
+        : .{.rdi = true}
     );
 
     unreachable;
