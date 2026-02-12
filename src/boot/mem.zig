@@ -19,7 +19,7 @@ pub const Entry = packed struct(u64) {
     accessed: bool = false,
     dirty: bool = false,
     leaf: bool = false,
-    global: bool = true,
+    global: bool = false,
     _pad0: u3 = 0,
     addr: u40,
     _pad: u11 = 0,
