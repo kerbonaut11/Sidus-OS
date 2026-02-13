@@ -88,8 +88,8 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
         }), 
     });
 
-    exe.root_module.addImport("BootInfo", b.addModule("{}", .{
-        .root_source_file = b.path("src/boot/BootInfo.zig")
+    exe.root_module.addImport("boot", b.addModule("{}", .{
+        .root_source_file = b.path("src/boot/root.zig")
     }));
     exe.setLinkerScript(b.path("src/kernel/linker.ld"));
 

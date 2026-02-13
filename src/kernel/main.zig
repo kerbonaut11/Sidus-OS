@@ -19,7 +19,6 @@ export fn _start() callconv(.naked) noreturn {
 export fn main(boot_info: *@import("BootInfo")) callconv(.c) noreturn {
     log.init(@import("drivers/uart16550.zig").init());
     std.log.debug("Hello, World!", .{});
-    std.log.debug("{*}", .{boot_info});
-    @import("pci.zig").lspci();
+    _ = boot_info;
     while (true) {}
 }
