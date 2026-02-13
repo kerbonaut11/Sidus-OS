@@ -42,7 +42,7 @@ pub const Entry = packed struct(u64) {
 };
 
 pub const page_size = std.heap.pageSize();
-pub const mega_page_size= table_size*std.heap.pageSize();
+pub const huge_page_size= table_size*std.heap.pageSize();
 const table_size = 512;
 pub const Table = *align(page_size) [table_size]Entry;
 var l4_table: Table = undefined;
@@ -53,17 +53,34 @@ pub fn init() !void {
     setL4(l4_table);
 }
 
-fn allocMegaPage() !usize {
+var huge_page_alloc_addr: usize = 0;
+
+fn allocHugePage() !usize {
     const boot_services = uefi.system_table.boot_services.?;
 
-    const over_alloc = try boot_services.allocatePages(.any, .loader_data, 2*table_size);
-    const alread_aligened = @intFromPtr(over_alloc.ptr) % mega_page_size == 0;
-    const num_unaligend_pages_before = if (alread_aligened) 0 else @divExact(mega_page_size-@intFromPtr(over_alloc.ptr)%mega_page_size, page_size);
+    if (huge_page_alloc_addr == 0) {
+        var iter = (try getMemoryMap()).iterator();
+        var biggest_free_range = std.mem.zeroes(uefi.tables.MemoryDescriptor);
+        while (iter.next()) |range| {
+            if (range.type != .conventional_memory) continue;
+            if (range.number_of_pages <= biggest_free_range.number_of_pages) continue;
+            biggest_free_range = range.*;
+        }
+        log.info("found {Bi} for allocating huge pages", .{biggest_free_range.number_of_pages*page_size});
+        huge_page_alloc_addr = std.mem.alignForward(usize, biggest_free_range.physical_start, huge_page_size);
+    }
 
-    try boot_services.freePages(over_alloc[0..num_unaligend_pages_before]);
-    try boot_services.freePages(over_alloc[num_unaligend_pages_before+table_size..]);
+    const max_retries = 128;
+    for (0..max_retries) |_| {
+        defer huge_page_alloc_addr += huge_page_size;
+        const alloc_result = boot_services.allocatePages(.{ .address = @ptrFromInt(huge_page_alloc_addr) }, .loader_data, table_size);
+        const pages = alloc_result catch |err| if (err == error.NotFound) continue else return err;
+        const addr = @intFromPtr(pages.ptr);
+        std.debug.assert(std.mem.isAligned(addr, huge_page_size));
+        return addr;
+    }
 
-    return @intFromPtr(over_alloc.ptr)+num_unaligend_pages_before*page_size;
+    return uefi.Error.OutOfResources;
 }
 
 pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
@@ -79,24 +96,22 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
 
     var pages_left: usize = pages;
     while (pages_left != 0) {
-        const map_2mib_page = l1_idx == 0 and pages_left >= table_size;
-        const l1_table = if (!map_2mib_page) try l2_table[l2_idx].getOrAllocTable() else null;
+        const map_huge_page = l1_idx == 0 and pages_left >= table_size;
+        const l1_table = if (!map_huge_page) try l2_table[l2_idx].getOrAllocTable() else null;
 
-        const phys_mem = if (map_2mib_page)
-            try allocMegaPage()
+        const phys_mem = if (map_huge_page)
+            try allocHugePage()
         else 
             @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr);
-
-        if (map_2mib_page) std.debug.assert(std.mem.isAligned(phys_mem, mega_page_size));
 
         const new_entry = Entry{
             .addr = @truncate(phys_mem >> 12),
             .write = write,
             .execute_disable = !execute,
-            .leaf = map_2mib_page,
+            .leaf = map_huge_page,
         };
 
-        if (map_2mib_page) {
+        if (map_huge_page) {
             std.debug.assert(!l2_table[l2_idx].present);
             l2_table[l2_idx] = new_entry;
             pages_left -= table_size;
@@ -109,10 +124,10 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
 
         log.debug(
           "maped {s} page at 0x{x} to 0x{x}000",
-          .{if (map_2mib_page) "2Mib" else "4Kib", vaddr+(pages-pages_left)*page_size, new_entry.addr}
+          .{if (map_huge_page) "2Mib" else "4Kib", vaddr+(pages-pages_left)*page_size, new_entry.addr}
         );
 
-        if (l1_idx == 0 or map_2mib_page) {
+        if (l1_idx == 0 or map_huge_page) {
             l2_idx +%= 1;
             if (l2_idx == 0) {
                 l3_idx += 1;
@@ -141,6 +156,6 @@ pub fn getMemoryMap() !uefi.tables.MemoryMapSlice {
     const boot_services = uefi.system_table.boot_services.?;
 
     const info = try boot_services.getMemoryMapInfo();
-    const pool = try boot_services.allocatePool(.loader_data, (info.len+32)*info.descriptor_size);
+    const pool = try boot_services.allocatePool(.loader_code, (info.len+32)*info.descriptor_size);
     return try boot_services.getMemoryMap(pool);
 }
