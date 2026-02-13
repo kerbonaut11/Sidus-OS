@@ -12,18 +12,17 @@ const Ehdr = elf.Elf64_Ehdr;
 const Phdr = elf.Elf64_Phdr;
 const Shdr = elf.Elf64_Shdr;
 
-const Error = error{BadFile}||uefi.Error;
-
 //returns the entry point
-pub fn loadKernel() Error!usize {
+pub fn loadKernel() !usize {
     const boot_services = uefi.system_table.boot_services.?;
     const fs = (try boot_services.locateProtocol(uefi.protocol.SimpleFileSystem, null)).?;
     const volume = try fs.openVolume();
     const kernel = try volume.open(util.uefiStringLit("kernel"), .read, .{});
+    log.info("located kernel elf", .{});
     return try load(kernel);
 }
 
-fn load(file: *File) Error!usize {
+fn load(file: *File) !usize {
     const header: Ehdr = try readOne(file, Ehdr);
 
     const Range = struct {start: usize, end: usize};
@@ -58,7 +57,6 @@ fn load(file: *File) Error!usize {
             }
         }
 
-        log.debug("{x} {x}", .{map_range.start, map_range.end});
         const execute = phdr.p_flags & elf.PF_X != 0;
         try mem.createMap(map_range.start, @divExact(map_range.end-map_range.start, mem.page_size), true, execute);
 

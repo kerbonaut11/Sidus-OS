@@ -12,7 +12,7 @@ pub fn uefiStringLit(comptime str: []const u8) [:0]const u16 {
 
 pub fn readAll(file: *File, out: []u8) !void {
     if (try file.read(out) != out.len) {
-        return error.BadFile;
+        return uefi.Error.EndOfFile;
     }
 }
 
