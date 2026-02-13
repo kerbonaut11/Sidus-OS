@@ -42,7 +42,8 @@ pub const Entry = packed struct(u64) {
 };
 
 pub const page_size = std.heap.pageSize();
-pub const huge_page_size= table_size*std.heap.pageSize();
+pub const huge_page_size= table_size*page_size;
+pub const huge_gib_page_size = table_size*huge_page_size;
 const table_size = 512;
 pub const Table = *align(page_size) [table_size]Entry;
 var l4_table: Table = undefined;
@@ -51,6 +52,7 @@ pub fn init() !void {
     l4_table = try allocTable();
     @memcpy(l4_table, getL4());
     setL4(l4_table);
+    try createPhysMirror();
 }
 
 var huge_page_alloc_addr: usize = 0;
@@ -134,6 +136,24 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
                 l2_table = try l3_table[l3_idx].getOrAllocTable();
             }
         }
+    }
+}
+
+pub const phys_mirror_start = 0xffff800000000000 | (1 << (12+9*3));
+pub const phys_mirror_len = huge_gib_page_size*table_size;
+
+pub fn createPhysMirror() !void {
+    const l4_idx: u9 = @truncate(phys_mirror_start >> (12+9*3));
+    std.debug.assert(!l4_table[l4_idx].present);
+    const l3_table = try l4_table[l4_idx].getOrAllocTable();
+
+    var addr: usize = 0;
+    for (l3_table) |*entry| {
+        entry.* = .{
+            .leaf = true,
+            .addr = @truncate(addr >> 12),
+        };
+        addr += huge_gib_page_size;
     }
 }
 
