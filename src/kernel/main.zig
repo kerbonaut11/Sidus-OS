@@ -1,5 +1,6 @@
 const std = @import("std");
 const log = @import("log.zig");
+const boot = @import("boot");
 pub const std_options: std.Options = .{
     .log_level = .debug,
     .logFn = log.logFn,
@@ -16,9 +17,10 @@ export fn _start() callconv(.naked) noreturn {
     );
 }
 
-export fn main(boot_info: *@import("BootInfo")) callconv(.c) noreturn {
+export fn main(boot_info: *boot.Info) callconv(.c) noreturn {
     log.init(@import("drivers/uart16550.zig").init());
     std.log.debug("Hello, World!", .{});
     _ = boot_info;
+    @import("pci.zig").lspci();
     while (true) {}
 }
