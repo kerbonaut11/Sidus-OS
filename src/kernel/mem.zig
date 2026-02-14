@@ -1,4 +1,4 @@
-pub const paging = @import("mem/virt.zig");
+pub const paging = @import("mem/paging.zig");
 pub const page_allocator = @import("mem/page_allocator.zig");
 
 pub const page_size = paging.page_size;
