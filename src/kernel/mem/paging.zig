@@ -23,7 +23,7 @@ pub const Entry = packed struct(u64) {
 
 pub const page_size = 4096;
 pub const huge_page_size= table_size*page_size;
-const table_size = 512;
+pub const table_size = 512;
 pub const Table = [table_size]Entry;
 
 pub fn physToVirt(comptime T: type, paddr: usize) ?T {
