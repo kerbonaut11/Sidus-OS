@@ -25,7 +25,6 @@ export fn main(boot_info: *boot.Info) callconv(.c) noreturn {
 
     log.init(@import("drivers/uart16550.zig").init());
     std.log.debug("Hello, World!", .{});
-    @import("mem/page_allocator.zig").init();
 
     for (boot.info.free_phys_memory) |mem| {
         std.log.debug("free memory {Bi} at 0x{x}", .{mem.len, @intFromPtr(mem.ptr)});
