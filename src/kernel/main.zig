@@ -43,5 +43,7 @@ export fn main() callconv(.c) noreturn {
         std.log.debug("free memory {Bi} at 0x{x}", .{mem.len, @intFromPtr(mem.ptr)});
     }
 
+    @import("mem.zig").page_allocator.init();
+
     while (true) {}
 }
