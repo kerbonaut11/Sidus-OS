@@ -26,7 +26,7 @@ pub fn build(b: *Build) void {
     };
 
     const gdb = b.option(bool, "gdb", "enbale QEMU gdb debugging") orelse false;
-    const kvm = b.option(bool, "kvm", "make QEMU use KVM") orelse true;
+    const kvm = b.option(bool, "kvm", "make QEMU use KVM") orelse false;
 
     var qemu_cmd = b.addSystemCommand(&.{"qemu-system-x86_64"});
     qemu_cmd.addArgs(&.{"-smbios", "type=0,uefi=on"});
