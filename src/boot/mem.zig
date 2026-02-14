@@ -41,7 +41,7 @@ pub const Entry = packed struct(u64) {
     }
 };
 
-pub const page_size = std.heap.pageSize();
+pub const page_size = 4096;
 pub const huge_page_size= table_size*page_size;
 pub const huge_gib_page_size = table_size*huge_page_size;
 const table_size = 512;
@@ -101,33 +101,40 @@ pub fn createMap(vaddr: usize, pages: usize, write: bool, execute: bool) !void {
         const map_huge_page = l1_idx == 0 and pages_left >= table_size;
         const l1_table = if (!map_huge_page) try l2_table[l2_idx].getOrAllocTable() else null;
 
-        const phys_mem = if (map_huge_page)
-            try allocHugePage()
-        else 
-            @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr);
+        const already_present = if (map_huge_page) l2_table[l2_idx].present else l1_table.?[l1_idx].present;
+        if (map_huge_page and already_present) std.debug.assert(l2_table[l2_idx].leaf);
 
-        const new_entry = Entry{
-            .addr = @truncate(phys_mem >> 12),
-            .write = write,
-            .execute_disable = !execute,
-            .leaf = map_huge_page,
-        };
+        if (!already_present) {
+            const phys_mem = if (map_huge_page)
+                try allocHugePage()
+            else 
+                @intFromPtr((try boot_services.allocatePages(.any, .loader_data, 1)).ptr);
+
+            const new_entry = Entry{
+                .addr = @truncate(phys_mem >> 12),
+                .write = write,
+                .execute_disable = !execute,
+                .leaf = map_huge_page,
+            };
+
+            if (map_huge_page) {
+                l2_table[l2_idx] = new_entry;
+            } else {
+                l1_table.?[l1_idx] = new_entry;
+            }
+
+            log.debug(
+            "maped {s} page at 0x{x} to 0x{x}000",
+            .{if (map_huge_page) "2Mib" else "4Kib", vaddr+(pages-pages_left)*page_size, new_entry.addr}
+            );
+        }
 
         if (map_huge_page) {
-            std.debug.assert(!l2_table[l2_idx].present);
-            l2_table[l2_idx] = new_entry;
             pages_left -= table_size;
         } else {
-            std.debug.assert(!l1_table.?[l1_idx].present);
-            l1_table.?[l1_idx] = new_entry;
             pages_left -= 1;
             l1_idx +%= 1;
         }
-
-        log.debug(
-          "maped {s} page at 0x{x} to 0x{x}000",
-          .{if (map_huge_page) "2Mib" else "4Kib", vaddr+(pages-pages_left)*page_size, new_entry.addr}
-        );
 
         if (l1_idx == 0 or map_huge_page) {
             l2_idx +%= 1;

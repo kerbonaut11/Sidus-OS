@@ -25,10 +25,6 @@ pub fn loadKernel() !usize {
 fn load(file: *File) !usize {
     const header: Ehdr = try readOne(file, Ehdr);
 
-    const Range = struct {start: usize, end: usize};
-    var buffer: [128]Range = undefined;
-    var already_mapped_ranges = std.ArrayList(Range).initBuffer(&buffer);
-
     for (0..header.e_phnum) |i| {
         try file.setPosition(header.e_phoff + i*header.e_phentsize);
         const phdr = try readOne(file, Phdr);
@@ -36,33 +32,14 @@ fn load(file: *File) !usize {
         if (phdr.p_type != elf.PT_LOAD) continue;
         log.debug("0x{x} byte section @ 0x{x}", .{phdr.p_memsz, phdr.p_vaddr});
 
-        const align_back = phdr.p_vaddr % mem.page_size;
-        const num_pages = std.mem.alignForward(usize, phdr.p_memsz, mem.page_size)/mem.page_size;
-        var map_range = Range{
-            .start = phdr.p_vaddr - align_back,
-            .end = phdr.p_vaddr - align_back + num_pages*mem.page_size,
-        };
-
-        for (already_mapped_ranges.items) |range| {
-            const start_in_range = map_range.start >= range.start and map_range.start < range.end;
-            const end_in_range = map_range.end >= range.start and map_range.end < range.end;
-            if (start_in_range and end_in_range) {
-                map_range.start = 0;
-                map_range.end = 0;
-                break;
-            } else if (start_in_range) {
-                map_range.start = range.end;
-            } else if (end_in_range) {
-                map_range.end = range.start;
-            }
-        }
+        const map_start = std.mem.alignBackward(usize, phdr.p_vaddr, mem.page_size);
+        const map_end = std.mem.alignForward(usize, phdr.p_vaddr+phdr.p_memsz, mem.page_size);
 
         const execute = phdr.p_flags & elf.PF_X != 0;
-        try mem.createMap(map_range.start, @divExact(map_range.end-map_range.start, mem.page_size), true, execute);
-
-        already_mapped_ranges.appendAssumeCapacity(map_range);
+        try mem.createMap(map_start, @divExact(map_end-map_start, mem.page_size), true, execute);
 
         try file.setPosition(phdr.p_offset);
+        log.debug("{x} {x} {x}", .{phdr.p_vaddr, phdr.p_vaddr+phdr.p_filesz, phdr.p_memsz});
         try readAll(file, @as([*]u8, @ptrFromInt(phdr.p_vaddr))[0..phdr.p_filesz]);
 
         log.debug("copied 0x{} bytes from kernel elf", .{phdr.p_memsz});
