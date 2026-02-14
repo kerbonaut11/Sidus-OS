@@ -19,8 +19,8 @@ fn panicFn(msg: []const u8, return_addr: ?usize) noreturn {
 
 pub const panic = std.debug.FullPanic(panicFn);
 
-export var stack: [8*1024*1024]u8 align(4096) linksection(".bss") = undefined;
-export const stack_size: usize = @sizeOf(@TypeOf(stack));
+export var stack: [stack_size]u8 align(4096) linksection(".bss") = undefined;
+export const stack_size: usize = 8*1024*1024;
 
 export fn _start() callconv(.naked) noreturn {
     boot.info = asm ("" : [info] "={rdi}" (->*boot.Info));
@@ -42,8 +42,6 @@ export fn main() callconv(.c) noreturn {
     for (boot.info.free_phys_memory) |mem| {
         std.log.debug("free memory {Bi} at 0x{x}", .{mem.len, @intFromPtr(mem.ptr)});
     }
-
-    @import("mem.zig").page_allocator.init();
 
     while (true) {}
 }
