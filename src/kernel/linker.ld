@@ -14,7 +14,6 @@ SECTIONS
   .data ALIGN(0x200000):
   {
       *(.data)
-      *(.data.rel.ro)
   }
   .bss ALIGN(0x200000):
   {
