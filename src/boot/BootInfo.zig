@@ -3,8 +3,9 @@ const uefi = std.os.uefi;
 const GraphicsOutput = uefi.protocol.GraphicsOutput;
 const mem = @import("mem.zig");
 const BootInfo = @This();
+pub const Pages = []align(mem.page_size) u8;
 
-free_phys_memory: [][]u8,
+free_phys_memory: []Pages,
 frame_buffer: struct {
     width: u32,
     height: u32,
@@ -16,7 +17,7 @@ frame_buffer: struct {
 },
 
 pub var instance: *BootInfo = undefined;
-var free_phys_memory_buffer: [][]u8 = undefined;
+var free_phys_memory_buffer: []Pages = undefined;
 
 pub fn alloc() !void {
     const boot_services = uefi.system_table.boot_services.?;
@@ -51,7 +52,7 @@ pub fn initFrameBuffer() !void {
 }
 
 pub fn initFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice) !void {
-    var free_phys_memory = std.ArrayList([]u8).initBuffer(free_phys_memory_buffer);
+    var free_phys_memory = std.ArrayList(Pages).initBuffer(free_phys_memory_buffer);
 
     var iter = memory_map.iterator();
     while (iter.next()) |e| {
@@ -61,7 +62,7 @@ pub fn initFreePhysMemory(memory_map: uefi.tables.MemoryMapSlice) !void {
         };
         if (!usable or e.physical_start == 0) continue;
 
-        const slice = @as([*]u8, @ptrFromInt(e.physical_start))[0..e.number_of_pages*mem.page_size];
+        const slice: Pages = @as([*]align(mem.page_size) u8, @ptrFromInt(e.physical_start))[0..e.number_of_pages*mem.page_size];
 
         if (free_phys_memory.getLastOrNull()) |last| {
             if (@intFromPtr(last.ptr)+last.len == e.physical_start) {
