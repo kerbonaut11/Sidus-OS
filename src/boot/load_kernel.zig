@@ -41,8 +41,9 @@ fn load(file: *File) !usize {
         try file.setPosition(phdr.p_offset);
         log.debug("{x} {x} {x}", .{phdr.p_vaddr, phdr.p_vaddr+phdr.p_filesz, phdr.p_memsz});
         try readAll(file, @as([*]u8, @ptrFromInt(phdr.p_vaddr))[0..phdr.p_filesz]);
+        @memset(@as([*]u8, @ptrFromInt(phdr.p_vaddr))[phdr.p_filesz..phdr.p_memsz], 0);
 
-        log.debug("copied 0x{} bytes from kernel elf", .{phdr.p_memsz});
+        log.debug("copied 0x{x} bytes from kernel elf to 0x{x}", .{phdr.p_filesz, phdr.p_vaddr});
     }
 
     log.debug("kernel entry: 0x{x}", .{header.e_entry});
