@@ -6,8 +6,12 @@ pub const std_options: std.Options = .{
     .logFn = log.logFn,
 };
 
-fn panicFn(msg: []const u8, _: ?usize) noreturn {
-    log.writer.print("panic: {s}\n", .{msg}) catch {};
+fn panicFn(msg: []const u8, return_addr: ?usize) noreturn {
+    if (return_addr) |addr| {
+        log.writer.print("panic: {s} at 0x{x}", .{msg, addr}) catch {};
+    } else {
+        log.writer.print("panic: {s}", .{msg}) catch {};
+    }
     log.writer.flush() catch {};
 
     while (true) {}
