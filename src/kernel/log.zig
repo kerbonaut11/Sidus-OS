@@ -1,8 +1,8 @@
 const std = @import("std");
-var out: *std.Io.Writer = undefined;
+pub var writer: *std.Io.Writer = undefined;
 
-pub fn init(out_writer: *std.Io.Writer) void {
-    out = out_writer;
+pub fn init(out: *std.Io.Writer) void {
+    writer = out;
 }
 
 pub fn logFn(
@@ -11,8 +11,8 @@ pub fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    out.print("{s}", .{message_level.asText()}) catch {};
-    if (scope != .default) out.print("@{s}", .{@tagName(scope)}) catch {};
-    out.print(": "++format++"\n", args) catch {};
-    out.flush() catch {};
+    writer.print("{s}", .{message_level.asText()}) catch {};
+    if (scope != .default) writer.print("@{s}", .{@tagName(scope)}) catch {};
+    writer.print(": "++format++"\n", args) catch {};
+    writer.flush() catch {};
 }

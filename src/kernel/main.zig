@@ -6,6 +6,15 @@ pub const std_options: std.Options = .{
     .logFn = log.logFn,
 };
 
+fn panicFn(msg: []const u8, _: ?usize) noreturn {
+    log.writer.print("panic: {s}\n", .{msg}) catch {};
+    log.writer.flush() catch {};
+
+    while (true) {}
+}
+
+pub const panic = std.debug.FullPanic(panicFn);
+
 export var stack: [8*1024*1024]u8 align(4096) = undefined;
 export const stack_size: usize = @sizeOf(@TypeOf(stack));
 
