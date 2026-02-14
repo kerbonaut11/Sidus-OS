@@ -1,7 +1,10 @@
 const std = @import("std");
 const Build = std.Build;
 
+var optimize: std.builtin.OptimizeMode = undefined;
+
 pub fn build(b: *Build) void {
+    optimize = b.standardOptimizeOption(.{});
     const boot_loader = buildBootloader(b);
     const kernel = buildKernel(b);
 
@@ -29,6 +32,8 @@ pub fn build(b: *Build) void {
     qemu_cmd.addArgs(&.{"-smbios", "type=0,uefi=on"});
     qemu_cmd.addArgs(&.{"-bios", ovmf_path});
     qemu_cmd.addArgs(&.{"-m", "256M"});
+    qemu_cmd.addArgs(&.{"-usb"});
+    qemu_cmd.addArgs(&.{"-device", "qemu-xhci"});
 
     if (kvm) qemu_cmd.addArgs(&.{"-enable-kvm", "-cpu", "host"});
     if (gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
@@ -68,6 +73,7 @@ pub fn buildBootloader(b: *Build) *Build.Step.Compile {
                 .cpu_arch = .x86_64,
                 .os_tag = .uefi,
             }),
+            .optimize = optimize,
         })
     });
 }
@@ -83,9 +89,9 @@ pub fn buildKernel(b: *Build) *Build.Step.Compile {
             }),
             .code_model = .kernel,
             .pic = true,
-            .optimize = .ReleaseSafe,
-            .strip = false,
+            .optimize = optimize,
         }), 
+        .use_llvm = true,
     });
 
     exe.root_module.addImport("boot", b.addModule("{}", .{
