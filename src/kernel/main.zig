@@ -47,6 +47,7 @@ export fn main() callconv(.c) noreturn {
     }
 
     mem.init();
+    io.pci.init() catch {};
     mem.initAllocators();
     io.mmapped.init() catch {};
 
