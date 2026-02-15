@@ -2,6 +2,7 @@ const std = @import("std");
 const log = @import("log.zig");
 const boot = @import("boot");
 const mem = @import("mem.zig");
+const io = @import("io.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -47,6 +48,7 @@ export fn main() callconv(.c) noreturn {
 
     mem.init();
     mem.initAllocators();
+    io.mmapped.init() catch {};
 
     while (true) {}
 }
