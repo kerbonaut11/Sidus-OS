@@ -1,6 +1,8 @@
 const std = @import("std");
 const log = @import("log.zig");
 const boot = @import("boot");
+const mem = @import("mem.zig");
+
 pub const std_options: std.Options = .{
     .log_level = .debug,
     .logFn = log.logFn,
@@ -39,11 +41,12 @@ export fn main() callconv(.c) noreturn {
     log.init(@import("drivers/uart16550.zig").init());
     std.log.debug("Hello, World!", .{});
 
-    for (boot.info.free_phys_memory) |mem| {
-        std.log.debug("free memory {Bi} at 0x{x}", .{mem.len, @intFromPtr(mem.ptr)});
+    for (boot.info.free_phys_memory) |range| {
+        std.log.debug("free memory {Bi} at 0x{x}", .{range.len, @intFromPtr(range.ptr)});
     }
 
-    @import("mem.zig").page_allocator.init();
+    mem.init();
+    mem.initAllocators();
 
     while (true) {}
 }

@@ -23,15 +23,19 @@ pub const Entry = packed struct(u64) {
         return @as(usize, e.addr) << 12;
     }
 
+    pub fn createAddr(paddr: usize) u40 {
+        return @truncate(@divExact(paddr, mem.page_size));
+    }
+
     pub fn getOrCreateChildTable(e: *Entry) !usize {
         if (e.present) {
             std.debug.assert(e.leaf);
             return e.getAddr();
         } 
 
-        e = .{
+        e.* = .{
             .leaf = true,
-            .addr = @truncate(try allocTable() >> 12),
+            .addr = createAddr(try allocTable()),
         };
 
         return e.getAddr();
@@ -43,10 +47,10 @@ pub const huge_page_size= table_size*page_size;
 pub const table_size = 512;
 pub const Table = *align(4096) [table_size]Entry;
 
-pub fn physToVirt(comptime T: type, paddr: usize) ?T {
-    if (paddr > boot.phys_mirror_len) return null;
+pub fn physToVirt(comptime T: type, paddr: usize) T {
+    if (paddr > boot.phys_mirror_len) @panic("padd to high");
 
-    return @bitCast(boot.phys_mirror_start+paddr);
+    return @ptrFromInt(boot.phys_mirror_start+paddr);
 }
 
 pub fn allocTable() !usize {
