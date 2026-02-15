@@ -29,7 +29,6 @@ pub fn initFreeSet() void {
         const end = @min(free_pages.bit_length, start+@divExact(range.len, mem.page_size));
         free_pages.setRangeValue(.{.start = start, .end = end}, true);
     }
-    std.log.debug("{}", .{free_pages.bit_length});
 }
 
 pub fn alloc() Error!usize {

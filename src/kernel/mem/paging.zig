@@ -29,12 +29,11 @@ pub const Entry = packed struct(u64) {
 
     pub fn getOrCreateChildTable(e: *Entry) !usize {
         if (e.present) {
-            std.debug.assert(e.leaf);
+            std.debug.assert(!e.leaf);
             return e.getAddr();
         } 
 
         e.* = .{
-            .leaf = true,
             .addr = createAddr(try allocTable()),
         };
 
@@ -59,7 +58,7 @@ pub fn allocTable() !usize {
     return new;
 }
 
-pub fn setL4(table: Table) void {
+pub fn setL4(table: usize) void {
     asm volatile (
         \\movq %rax, %cr3
         :: [l4] "{rax}" (table)
@@ -67,8 +66,8 @@ pub fn setL4(table: Table) void {
 }
 
 pub fn getL4() Table {
-    return asm volatile (
+    return physToVirt(Table, asm volatile (
         \\movq %cr3, %rax
-        : [l4] "={rax}" (->Table)
-    );
+        : [l4] "={rax}" (->usize)
+    ));
 }
