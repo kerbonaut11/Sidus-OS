@@ -42,12 +42,12 @@ pub fn createArray(comptime T: type, paddr: usize, len: usize) ![]volatile T {
         }
     }
 
-    return @ptrFromInt(result);
+    return @as([*]volatile T, @ptrFromInt(result))[0..len];
 }
 
 
 pub fn create(comptime T: type, paddr: usize) !*volatile T {
-    return (try createArray(T, paddr, 1)).ptr;
+    return @ptrCast((try createArray(T, paddr, 1)).ptr);
 }
 
 

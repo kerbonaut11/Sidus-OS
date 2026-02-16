@@ -116,7 +116,7 @@ pub const Device = struct {
     }
 };
 
-var devices: []Device = undefined;
+pub var devices: []Device = undefined;
 
 pub fn enumerateDevices() !void {
     var devices_buf = std.ArrayList(Device).empty;
