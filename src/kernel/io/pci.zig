@@ -30,6 +30,16 @@ pub const Device = struct {
     const Class = enum(u16) {
         vga_compatible_display_controller = 0x0300,
 
+        scsi_bus_controller = 0x0100,
+        ide_controller,
+        floppy_disk_controller,
+        ipi_bus_controller,
+        raid_controller,
+        ata_controller,
+        serial_ata_controller,
+        serial_attached_scsi_controller,
+        nvm_controller,
+
         host_bridge = 0x0600,
         isa_bridge,
         eisa_bridge,
@@ -50,6 +60,22 @@ pub const Device = struct {
         _
     };
 
+    const ProgrammingInterface = extern union {
+        byte: u8,
+        nvm_controller: enum(u8) {
+            basic = 1,
+            express = 2,
+            _,
+        },
+        usb_controller: enum(u8) {
+            uhci = 0x00,
+            ohci = 0x10,
+            ehci = 0x20,
+            xhci = 0x30,
+            _,
+        }
+    };
+
     bus: BusIdx,
     device_idx: DeviceIdx,
 
@@ -57,7 +83,7 @@ pub const Device = struct {
     device_id: u16,
 
     revision_id: u8,
-    programming_interface: u8,
+    programming_interface: ProgrammingInterface,
     class: Class,
 
     chache_line_size: u8,
@@ -89,7 +115,7 @@ pub const Device = struct {
             .device_id = device_id,
 
             .revision_id = revision_id,
-            .programming_interface = programming_interface,
+            .programming_interface = .{.byte = programming_interface},
             .class = @enumFromInt(@as(u16, class) << 8 | sub_class),
 
             .chache_line_size = chache_line_size,

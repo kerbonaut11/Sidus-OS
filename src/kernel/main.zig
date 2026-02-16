@@ -51,5 +51,12 @@ export fn main() callconv(.c) noreturn {
     mem.initAllocators();
     io.mmapped.init() catch {};
 
+    for (io.pci.devices) |*device| {
+        std.log.debug("{}", .{device.class});
+        if (device.class == .nvm_controller and device.programming_interface.nvm_controller == .express) {
+            @import("drivers/blockdev/nvme.zig").init(device) catch unreachable;
+        }
+    }
+
     while (true) {}
 }

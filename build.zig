@@ -34,6 +34,7 @@ pub fn build(b: *Build) void {
     qemu_cmd.addArgs(&.{"-m", "256M"});
     qemu_cmd.addArgs(&.{"-usb"});
     qemu_cmd.addArgs(&.{"-device", "qemu-xhci"});
+    qemu_cmd.addArgs(&.{"-device", "nvme,serial=ffaa"});
 
     if (kvm) qemu_cmd.addArgs(&.{"-enable-kvm", "-cpu", "host"});
     if (gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
