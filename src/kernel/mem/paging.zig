@@ -47,7 +47,7 @@ pub const table_size = 512;
 pub const Table = *align(4096) [table_size]Entry;
 
 pub fn physToVirt(comptime T: type, paddr: usize) T {
-    if (paddr > boot.phys_mirror_len) @panic("padd to high");
+    if (paddr > boot.phys_mirror_len) @panic("paddr to high");
 
     return @ptrFromInt(boot.phys_mirror_start+paddr);
 }
