@@ -17,7 +17,7 @@ pub fn init() !void {
     l3_table = mem.physToVirt(mem.paging.Table, l3_addr);
 }
 
-pub fn createArray(comptime T: type, paddr: usize, len: usize) ![]volatile T {
+pub fn createSlice(comptime T: type, paddr: usize, len: usize) ![]volatile T {
     const bytes = @sizeOf(T)*len;
     const start = std.mem.alignBackward(usize, paddr, mem.huge_page_size);
     const end = std.mem.alignForward(usize, paddr+bytes, mem.huge_page_size);
@@ -29,8 +29,8 @@ pub fn createArray(comptime T: type, paddr: usize, len: usize) ![]volatile T {
         const l2_table = mem.physToVirt(mem.paging.Table, try l3_table[l3_idx].getOrCreateChildTable());
         l2_table[l2_idx] = mem.paging.Entry{
             .leaf = true,
-            //.chace_disable = true,
-            //.write_through = true,
+            .chace_disable = true,
+            .write_through = true,
             .addr = mem.paging.Entry.createAddr(map_paddr),
         };
 
@@ -47,7 +47,7 @@ pub fn createArray(comptime T: type, paddr: usize, len: usize) ![]volatile T {
 
 
 pub fn create(comptime T: type, paddr: usize) !*volatile T {
-    return @ptrCast((try createArray(T, paddr, 1)).ptr);
+    return @ptrCast((try createSlice(T, paddr, 1)).ptr);
 }
 
 
