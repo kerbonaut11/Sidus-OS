@@ -9,7 +9,7 @@ const DeviceIdx = u5;
 const BusIdx = u8;
 const FunctionIdx = u3;
 
-const Address = packed struct(u32) {
+pub const Address = packed struct(u32) {
     reg_offset: u8,
     function: FunctionIdx,
     device: DeviceIdx,
@@ -26,7 +26,7 @@ const Address = packed struct(u32) {
     }
 };
 
-const Device = struct {
+pub const Device = struct {
     const Class = enum(u16) {
         vga_compatible_display_controller = 0x0300,
 
@@ -99,26 +99,31 @@ const Device = struct {
         };
     }
 
-    pub fn read(device: *const Device, function: FunctionIdx, offset: u8) u32 {
+    pub fn read(device: *const Device, offset: u8) u32 {
         const addr = Address{
             .reg_offset = offset,
-            .function = function,
+            .function = 0,
             .bus = device.bus,
             .device = device.device_idx,
         };
         return addr.read();
     }
+
+    pub fn baseAddresRegister(device: *const Device, idx: u8) usize {
+        const lo: u64 = device.read(0x10+idx*@sizeOf(usize));
+        const hi: u64 = device.read(0x14+idx*@sizeOf(usize));
+        return hi << 32 | lo;
+    }
 };
 
 var devices: []Device = undefined;
 
-pub fn init() !void {
+pub fn enumerateDevices() !void {
     var devices_buf = std.ArrayList(Device).empty;
     for (0..std.math.maxInt(u8)) |bus| {
         for (0..std.math.maxInt(u5)) |device_idx| {
             const device = Device.init(@intCast(bus), @intCast(device_idx)) orelse continue;
             try devices_buf.append(mem.init_allocator, device);
-            log.debug("{}", .{device.class});
         }
     }
 

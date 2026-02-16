@@ -47,7 +47,7 @@ export fn main() callconv(.c) noreturn {
     }
 
     mem.init();
-    io.pci.init() catch {};
+    io.pci.enumerateDevices() catch {};
     mem.initAllocators();
     io.mmapped.init() catch {};
 
