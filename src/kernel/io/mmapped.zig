@@ -17,9 +17,10 @@ pub fn init() !void {
     l3_table = mem.physToVirt(mem.paging.Table, l3_addr);
 }
 
-pub fn create(comptime T: type, paddr: usize, len: usize) !T {
+pub fn createArray(comptime T: type, paddr: usize, len: usize) ![]volatile T {
+    const bytes = @sizeOf(T)*len;
     const start = std.mem.alignBackward(usize, paddr, mem.huge_page_size);
-    const end = std.mem.alignForward(usize, paddr+len, mem.huge_page_size);
+    const end = std.mem.alignForward(usize, paddr+bytes, mem.huge_page_size);
     const num_huge_pages = @divExact(end-start, mem.huge_page_size);
     const result = addr + paddr%mem.huge_page_size;
 
@@ -42,6 +43,11 @@ pub fn create(comptime T: type, paddr: usize, len: usize) !T {
     }
 
     return @ptrFromInt(result);
+}
+
+
+pub fn create(comptime T: type, paddr: usize) !*volatile T {
+    return (try createArray(T, paddr, 1)).ptr;
 }
 
 
