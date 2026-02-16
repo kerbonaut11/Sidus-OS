@@ -111,8 +111,9 @@ pub const Device = struct {
 
     pub fn baseAddresRegister(device: *const Device, idx: u8) usize {
         const lo: u64 = device.read(0x10+idx*@sizeOf(usize));
+        const mask =  ~@as(u64, if (lo & 1 == 1) 0b11 else 0b1111);
         const hi: u64 = device.read(0x14+idx*@sizeOf(usize));
-        return hi << 32 | lo;
+        return (hi << 32 | lo) & mask;
     }
 };
 
