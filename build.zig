@@ -8,8 +8,8 @@ pub fn build(b: *Build) void {
     const boot_loader = buildBootloader(b);
     const kernel = buildKernel(b);
 
-    const image_type = b.option(enum {img, gpt, iso}, "image-type", "format of the bootable output file") 
-        orelse .img;
+    const image_type = b.option(enum {gpt, iso}, "image-type", "format of the bootable output file") 
+        orelse .iso;
     const ovmf_path = b.option([]const u8, "omvf", "path to the ovmf bios") 
         orelse "/usr/share/ovmf/x64/OVMF.4m.fd";
 
@@ -21,7 +21,6 @@ pub fn build(b: *Build) void {
     make_image.addArtifactArg(kernel);
     const image = switch (image_type) {
         .gpt => make_image.addOutputFileArg("hdimage.bin"),
-        .img => fat_img,
         .iso => make_image.addOutputFileArg("cdimage.iso"),
     };
 
@@ -34,13 +33,15 @@ pub fn build(b: *Build) void {
     qemu_cmd.addArgs(&.{"-m", "256M"});
     qemu_cmd.addArgs(&.{"-usb"});
     qemu_cmd.addArgs(&.{"-device", "qemu-xhci"});
-    qemu_cmd.addArgs(&.{"-device", "nvme,serial=ffaa"});
+    qemu_cmd.addArgs(&.{"-drive"});
+    qemu_cmd.addPrefixedFileArg("id=rootfs,if=none,file=", fat_img);
+    qemu_cmd.addArgs(&.{"-device", "nvme,drive=rootfs,serial=deadbeef"});
 
     if (kvm) qemu_cmd.addArgs(&.{"-enable-kvm", "-cpu", "host"});
     if (gdb) qemu_cmd.addArgs(&.{"-s", "-S"});
 
     switch (image_type) {
-        .gpt, .img => qemu_cmd.addArg("-hda"),
+        .gpt => qemu_cmd.addArg("-hda"),
         .iso => qemu_cmd.addArg("-cdrom"),
     }
     qemu_cmd.addFileArg(image);
@@ -50,7 +51,6 @@ pub fn build(b: *Build) void {
 
     const install_file_name = switch (image_type) {
         .gpt => "hdimage.bin",
-        .img => "fat.img",
         .iso => "cdimage.iso",
     };
     const install_file = b.addInstallFile(image, install_file_name);

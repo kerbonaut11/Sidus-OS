@@ -5,7 +5,7 @@ const mmio = io.mmapped;
 const mem = @import("../../mem.zig");
 const log = std.log.scoped(.nvme);
 
-const Error = error{QueueFull, QueueEmpty} || std.mem.Allocator.Error;
+const Error = error{CommandFailed, QueueFull, QueueEmpty, NotReady} || std.mem.Allocator.Error;
 
 const Regs = packed struct {
     const doorbells_offset = 0x1000;
@@ -62,11 +62,24 @@ const Regs = packed struct {
 
 const Queue = packed struct {
     const SubmissionEntry = packed struct {
-        opcode: u8,
-        _pad0: u8 = 0,
-        command_id: u16,
+        opcode: packed union {
+            admin: enum(u8) {
+                delete_io_submission_queue = 0x00,
+                create_io_submission_queue = 0x01,
+                delete_io_completion_queue = 0x04,
+                create_io_completion_queue = 0x05,
+                identify = 0x06,
+            },
 
-        nsid: u32 = 0,
+            io: enum(u8) {
+                write = 0x01,
+                read = 0x02,
+            },
+        },
+        _pad0: u8 = 0,
+        command_id: u16 = 0,
+
+        namespace_id: u32 = 0,
         _pad1: u64 = 0,
         metadata_ptr: usize = 0,
         data_ptr_1: usize = 0,
@@ -124,6 +137,30 @@ const Queue = packed struct {
         return queue;
     }
 
+    pub fn initIO(admin_queue: *Queue, regs: *volatile Regs, id: u16) !Queue {
+        const queue = try Queue.init(id);
+
+        try admin_queue.submitBlocking(regs, .{
+            .opcode = .{.admin = .create_io_completion_queue},
+            .data_ptr_1 = queue.completion_addr,
+            .data_ptr_2 = queue.completion_addr,
+            .dword10 = @as(u32, num_entries-1 << 16) | id,
+            .dword11 = 1,
+        });
+
+        try admin_queue.submitBlocking(regs, .{
+            .opcode = .{.admin = .create_io_submission_queue},
+            .data_ptr_1 = queue.submission_addr,
+            .data_ptr_2 = queue.submission_addr,
+            .dword10 = @as(u32, num_entries-1 << 16) | id,
+            .dword11 = @as(u32, id) << 16 | 1,
+        });
+
+        log.debug("created IO Queue", .{});
+
+        return queue;
+    }
+
     pub fn write(queue: *Queue, regs: *volatile Regs, data: SubmissionEntry) !void {
         if ((queue.tail+1)%num_entries == queue.head) return Error.QueueFull;
 
@@ -135,48 +172,155 @@ const Queue = packed struct {
     pub fn read(queue: *Queue, regs: *volatile Regs) !CompletionEntry {
         if (queue.tail == queue.head) return Error.QueueEmpty;
 
+        if (!queue.completion_entries[queue.head].phase_tag) return Error.NotReady;
+        queue.completion_entries[queue.head].phase_tag = false;
+
         const data = queue.completion_entries[queue.head];
         queue.head += 1;
         regs.ringDoorbell(queue.id, queue.head, true);
 
+        if (data.status != 0) {
+            log.debug("type: {x} code: {x} {b}", .{data.status >> 8 & 0b111, data.status & 0xff, data.status});
+            return error.CommandFailed;
+        }
+
         return data;
+    }
+
+    pub fn submitBlocking(queue: *Queue, regs: *volatile Regs, command: SubmissionEntry) !void {
+        try queue.write(regs, command);
+        while (true) {
+            _ = queue.read(regs) catch |err| if (err == error.NotReady) continue else return err;
+            break;
+        }
     }
 };
 
+const NamespaceInfoRaw = extern struct {
+    size_blocks: u64,
+    capacity_blocks: u64,
+    used_blocks: u64,
+    features: u8,
+    block_format_count: u8,
+    formatted_size: packed struct(u8) {idx_lo: u4, metadata_at_end_of_block: bool, idx_hi: u2, _pad: u1},
+    _pad: [100]u8,
+
+    block_formats: [64]packed struct(u32) {metadata_size: u16, block_size_log2: u8, _pad: u8},
+};
+
+const Namespace = struct {
+    id: u32,
+
+    size_blocks: u64,
+    capacity_blocks: u64,
+    used_blocks: u64,
+
+    block_size: u64,
+    metadata_size: u16,
+    metadata_at_end_of_block: bool,
+};
+
 const Driver = struct {
+    pci: *const pci.Device,
     regs: *volatile Regs,
+    admin_queue: Queue,
+    io_queue: Queue,
+
+    fn init(device: *const pci.Device) !Driver {
+        const base_addr = device.baseAddresRegister(0);
+        const regs_raw = try mmio.createSlice(u8, base_addr, Regs.doorbells_offset+Regs.max_doorbell_bytes);
+        const regs: *volatile Regs = @ptrCast(@alignCast(regs_raw));
+
+        regs.config = @bitCast(@as(u32, 0));
+        while (regs.status.ready) {}
+
+        var admin_queue = try Queue.initAdmin(regs);
+
+        regs.config = .{
+            .io_command_set_select = 0b110,
+            .io_submission_queue_entry_size_log2 = @intCast(std.math.log2_int(usize, @sizeOf(Queue.SubmissionEntry))), 
+            .io_completion_queue_entry_size_log2 = @intCast(std.math.log2_int(usize, @sizeOf(Queue.CompletionEntry))), 
+            .enable = true,
+        };
+
+        while (!regs.status.ready) {}
+
+        const io_queue = Queue.initIO(&admin_queue, regs, 1) catch unreachable;
+
+        return .{
+            .pci = device,
+            .regs = regs,
+            .admin_queue = admin_queue,
+            .io_queue = io_queue,
+        };
+    }
+
+    fn enumerateNamespaces(driver: *Driver) ![]Interface {
+        const namespace_list_addr = try mem.page_allocator.alloc();
+        const namespace_list = mem.physToVirt([*]u32, namespace_list_addr);
+        defer mem.page_allocator.free(namespace_list_addr);
+
+        try driver.admin_queue.submitBlocking(driver.regs, .{
+            .opcode = .{.admin = .identify},
+            .data_ptr_1 = namespace_list_addr,
+            .dword10 = 0x02,
+        });
+        const namespace_count = std.mem.indexOfScalar(u32, namespace_list[0..1024], 0) orelse 1024;
+
+        const namespace_info_addr = try mem.page_allocator.alloc();
+        const namespace_info = mem.physToVirt(*NamespaceInfoRaw, namespace_info_addr);
+        defer mem.page_allocator.free(namespace_info_addr);
+
+        const interfaces_addr = try mem.page_allocator.alloc();
+        const interfaces = mem.physToVirt(*[mem.page_size/@sizeOf(Interface)]Interface, interfaces_addr);
+
+        for (namespace_list[0..namespace_count], interfaces[0..namespace_count]) |namespace_id, *interface| {
+            try driver.admin_queue.write(driver.regs, .{
+                .opcode = .{.admin = .identify},
+                .namespace_id = namespace_id,
+                .data_ptr_1 = namespace_info_addr,
+                .dword10 = 0x00,
+            });
+
+            const format_idx = @as(usize, namespace_info.formatted_size.idx_lo) << 4 | namespace_info.formatted_size.idx_lo;
+            const format = namespace_info.block_formats[format_idx];
+
+            interface.* = .{
+                .driver = driver,
+                .namespace = Namespace{
+                    .id = namespace_id,
+                    .size_blocks = namespace_info.size_blocks,
+                    .capacity_blocks = namespace_info.capacity_blocks,
+                    .used_blocks = namespace_info.used_blocks,
+                    .block_size = @as(u64, 1) << @truncate(format.block_size_log2),
+                    .metadata_at_end_of_block = namespace_info.formatted_size.metadata_at_end_of_block,
+                    .metadata_size = format.metadata_size,
+                },
+                .vtable = .{},
+            };
+
+            log.debug("{}", .{interface.namespace});
+        }
+
+        return &.{};
+    }
+};
+
+const Interface = struct {
+    driver: *Driver,
+    namespace: Namespace,
+    vtable: struct {},
 };
 
 comptime {
     std.debug.assert(@offsetOf(Regs, "admin_queue_lengths") == 0x24);
     std.debug.assert(@sizeOf(Queue.SubmissionEntry) == 64);
     std.debug.assert(@sizeOf(Queue.CompletionEntry) == 16);
+    std.debug.assert(@offsetOf(NamespaceInfoRaw, "block_formats") == 128);
 }
 
 
 pub fn init(device: *const pci.Device) !void {
-    const base_addr = device.baseAddresRegister(0);
-    const regs_raw = try mmio.createSlice(u8, base_addr, Regs.doorbells_offset+Regs.max_doorbell_bytes);
-    regs_raw[0] = 0xaf;
-    const regs: *volatile Regs = @ptrCast(@alignCast(regs_raw.ptr));
-
-    regs.config = @bitCast(@as(u32, 0));
-    while (regs.status.ready) {}
-
-    var admin_queue = try Queue.initAdmin(regs);
-
-    regs.config = .{
-        .io_command_set_select = 0b110,
-        .io_submission_queue_entry_size_log2 = @intCast(std.math.log2_int(usize, @sizeOf(Queue.SubmissionEntry))), 
-        .io_completion_queue_entry_size_log2 = @intCast(std.math.log2_int(usize, @sizeOf(Queue.CompletionEntry))), 
-        .enable = true,
-    };
-
-    while (!regs.status.ready) {}
-
-    admin_queue.write(regs, .{.command_id = 1, .nsid = 0, .opcode = 0x14, .dword10 = 1}) catch unreachable;
-
-    while (!admin_queue.completion_entries[admin_queue.head].phase_tag) {}
-    log.debug("{x}", .{(try admin_queue.read(regs)).status});
-
+    var driver = try Driver.init(device);
+    _ = try driver.enumerateNamespaces();
 }
