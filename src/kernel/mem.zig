@@ -4,9 +4,12 @@ const boot = @import("boot");
 pub const paging = @import("mem/paging.zig");
 pub const page_allocator = @import("mem/page_allocator.zig");
 
+pub const phys_mirror_start = boot.phys_mirror_start;
+pub const phys_mirror_len = boot.phys_mirror_len;
 pub const page_size = paging.page_size;
 pub const huge_page_size = paging.huge_page_size;
 pub const physToVirt = paging.physToVirt;
+pub const virtToPhys = paging.virtToPhys;
 
 pub const kib = 1024;
 pub const mib = kib*1024;

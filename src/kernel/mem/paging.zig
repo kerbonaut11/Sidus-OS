@@ -52,6 +52,26 @@ pub fn physToVirt(comptime T: type, paddr: usize) T {
     return @ptrFromInt(boot.phys_mirror_start+paddr);
 }
 
+const VirtToPhysFlags = packed struct {
+
+};
+
+pub fn virtToPhys(ptr: anytype, flags: VirtToPhysFlags) ?usize {
+    const vaddr = @intFromPtr(ptr);
+    if (vaddr >= mem.phys_mirror_start and vaddr-mem.phys_mirror_start < mem.phys_mirror_len) return vaddr-boot.phys_mirror_start;
+
+    return virtToPhysInner(vaddr, flags, 4, getL4Addr());
+}
+
+fn virtToPhysInner(vaddr: usize, flags: VirtToPhysFlags, level: u6, table: usize) ?usize {
+    const entry_idx: u9 = @truncate(vaddr >> (12+9*(level-1)));
+    const entry = physToVirt(Table, table)[entry_idx];
+    if (!entry.present) return null;
+    if (entry.leaf or level == 1) return entry.getAddr();
+
+    return virtToPhysInner(vaddr, flags, level-1, entry.getAddr());
+}
+
 pub fn allocTable() !usize {
     const new = try mem.page_allocator.alloc();
     @memset(mem.physToVirt(Table, new), Entry.not_present);
@@ -65,9 +85,13 @@ pub fn setL4(table: usize) void {
     );
 }
 
-pub fn getL4() Table {
-    return physToVirt(Table, asm volatile (
+pub fn getL4Addr() usize {
+    return asm volatile (
         \\movq %cr3, %rax
         : [l4] "={rax}" (->usize)
-    ));
+    );
+}
+
+pub fn getL4() Table {
+    return physToVirt(Table, getL4Addr());
 }
