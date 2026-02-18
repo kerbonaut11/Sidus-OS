@@ -67,7 +67,7 @@ fn virtToPhysInner(vaddr: usize, flags: VirtToPhysFlags, level: u6, table: usize
     const entry_idx: u9 = @truncate(vaddr >> (12+9*(level-1)));
     const entry = physToVirt(Table, table)[entry_idx];
     if (!entry.present) return null;
-    if (entry.leaf or level == 1) return entry.getAddr();
+    if (entry.leaf or level == 1) return entry.getAddr() + vaddr % mem.page_size;
 
     return virtToPhysInner(vaddr, flags, level-1, entry.getAddr());
 }
