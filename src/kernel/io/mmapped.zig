@@ -10,7 +10,7 @@ var l2_idx: u9 = 0;
 var addr: usize = start_addr;
 
 pub fn init() !void {
-    const l3_addr = try mem.page_allocator.alloc();
+    const l3_addr = try mem.phys_page_allocator.alloc();
     mem.paging.getL4()[l4_idx] = .{
         .addr = mem.paging.Entry.createAddr(l3_addr),
     };

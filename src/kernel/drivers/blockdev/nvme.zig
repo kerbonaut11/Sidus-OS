@@ -113,9 +113,9 @@ const Queue = packed struct {
     head: u32,
 
     pub fn init(id: u16) !Queue {
-        const submission_addr = try mem.page_allocator.alloc();
+        const submission_addr = try mem.phys_page_allocator.alloc();
         const submission_entries = try mmio.create([num_entries]SubmissionEntry, submission_addr);
-        const completion_addr = try mem.page_allocator.alloc();
+        const completion_addr = try mem.phys_page_allocator.alloc();
         const completion_entries = try mmio.create([num_entries]CompletionEntry, completion_addr);
         @memset(std.mem.sliceAsBytes(completion_entries), 0);
 
@@ -258,9 +258,9 @@ const Driver = struct {
     }
 
     fn enumerateNamespaces(driver: *Driver) ![]Namespace {
-        const namespace_list_addr = try mem.page_allocator.alloc();
+        const namespace_list_addr = try mem.phys_page_allocator.alloc();
         const namespace_list = mem.physToVirt([*]u32, namespace_list_addr);
-        defer mem.page_allocator.free(namespace_list_addr);
+        defer mem.phys_page_allocator.free(namespace_list_addr);
 
         try driver.admin_queue.submitBlocking(driver.regs, .{
             .opcode = .{.admin = .identify},
@@ -269,11 +269,11 @@ const Driver = struct {
         });
         const namespace_count = std.mem.indexOfScalar(u32, namespace_list[0..1024], 0) orelse 1024;
 
-        const namespace_info_addr = try mem.page_allocator.alloc();
+        const namespace_info_addr = try mem.phys_page_allocator.alloc();
         const namespace_info = mem.physToVirt(*NamespaceInfoRaw, namespace_info_addr);
-        defer mem.page_allocator.free(namespace_info_addr);
+        defer mem.phys_page_allocator.free(namespace_info_addr);
 
-        const interfaces_addr = try mem.page_allocator.alloc();
+        const interfaces_addr = try mem.phys_page_allocator.alloc();
         const interfaces = mem.physToVirt(*[mem.page_size/@sizeOf(Namespace)]Namespace, interfaces_addr);
 
         for (namespace_list[0..namespace_count], interfaces[0..namespace_count]) |namespace_id, *interface| {

@@ -76,7 +76,7 @@ fn virtToPhysInner(vaddr: usize, flags: VirtToPhysFlags, level: u6, table: usize
 }
 
 pub fn allocTable() !usize {
-    const new = try mem.page_allocator.alloc();
+    const new = try mem.phys_page_allocator.alloc();
     @memset(mem.physToVirt(Table, new), Entry.not_present);
     return new;
 }

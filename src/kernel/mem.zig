@@ -2,7 +2,7 @@ const std = @import("std");
 const boot = @import("boot");
 
 pub const paging = @import("mem/paging.zig");
-pub const page_allocator = @import("mem/page_allocator.zig");
+pub const phys_page_allocator = @import("mem/phys_page_allocator.zig");
 
 pub const phys_mirror_start = boot.phys_mirror_start;
 pub const phys_mirror_len = boot.phys_mirror_len;
@@ -29,12 +29,12 @@ pub fn init() void {
 }
 
 pub fn initAllocators() void {
-    page_allocator.initAlloc() catch unreachable;
+    phys_page_allocator.initAlloc() catch unreachable;
 
     const init_range: *[]align(page_size) u8 = &boot.info.free_phys_memory[init_allocator_range_idx];
     init_range.* = @alignCast(init_range.*[std.mem.alignForward(usize, init_allocator_instance.end_index, page_size)..]);
     init_allocator = std.testing.failing_allocator;
     init_allocator_instance = .init(&.{});
 
-    page_allocator.initFreeSet();
+    phys_page_allocator.initFreeSet();
 }
