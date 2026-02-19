@@ -60,14 +60,18 @@ pub fn virtToPhys(ptr: anytype, flags: VirtToPhysFlags) ?usize {
     const vaddr = @intFromPtr(ptr);
     if (vaddr >= mem.phys_mirror_start and vaddr-mem.phys_mirror_start < mem.phys_mirror_len) return vaddr-boot.phys_mirror_start;
 
-    return virtToPhysInner(vaddr, flags, 4, getL4Addr());
+    return virtToPhysInner(vaddr, flags, 3, getL4Addr());
 }
 
 fn virtToPhysInner(vaddr: usize, flags: VirtToPhysFlags, level: u6, table: usize) ?usize {
-    const entry_idx: u9 = @truncate(vaddr >> (12+9*(level-1)));
+    const entry_idx: u9 = @truncate(vaddr >> (12+9*level));
     const entry = physToVirt(Table, table)[entry_idx];
     if (!entry.present) return null;
-    if (entry.leaf or level == 1) return entry.getAddr() + vaddr % mem.page_size;
+    if (entry.leaf or level == 0) {
+        const mask = (@as(usize, 1) << (12+9*level))-1;
+        std.log.debug("{x} {x}", .{entry.getAddr(), vaddr & mask});
+        return entry.getAddr() + (vaddr & mask);
+    }
 
     return virtToPhysInner(vaddr, flags, level-1, entry.getAddr());
 }
