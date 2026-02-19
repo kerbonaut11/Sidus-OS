@@ -368,9 +368,5 @@ comptime {
 pub fn init(device: *const pci.Device) !void {
     var driver = try Driver.init(device);
     const namespaces = try driver.enumerateNamespaces();
-    var buf: [4096]u8 align(4096) = @splat(0x69);
-    namespaces[0].block_dev.write(0, @ptrCast(&buf)) catch {};
-    buf = @splat(0);
-    namespaces[0].block_dev.read(0, @ptrCast(&buf)) catch {};
-    log.debug("{x}", .{buf});
+    _ = namespaces;
 }

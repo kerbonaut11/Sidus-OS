@@ -69,7 +69,6 @@ fn virtToPhysInner(vaddr: usize, flags: VirtToPhysFlags, level: u6, table: usize
     if (!entry.present) return null;
     if (entry.leaf or level == 0) {
         const mask = (@as(usize, 1) << (12+9*level))-1;
-        std.log.debug("{x} {x}", .{entry.getAddr(), vaddr & mask});
         return entry.getAddr() + (vaddr & mask);
     }
 
