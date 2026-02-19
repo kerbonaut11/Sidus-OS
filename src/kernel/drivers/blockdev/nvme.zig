@@ -4,6 +4,7 @@ const pci = io.pci;
 const mmio = io.mmapped;
 const mem = @import("../../mem.zig");
 const log = std.log.scoped(.nvme);
+const BlockDev = @import("BlockDev.zig");
 
 const Error = error{CommandFailed, QueueFull, QueueEmpty, NotReady} || std.mem.Allocator.Error;
 
@@ -208,7 +209,7 @@ const NamespaceInfoRaw = extern struct {
     block_formats: [64]packed struct(u32) {metadata_size: u16, block_size_log2: u8, _pad: u8},
 };
 
-const Namespace = struct {
+const NamespaceInfo = struct {
     id: u32,
 
     size_blocks: u64,
@@ -236,6 +237,7 @@ const Driver = struct {
 
         var admin_queue = try Queue.initAdmin(regs);
 
+        regs.interrupt_mask_clear = std.math.maxInt(u32);
         regs.config = .{
             .io_command_set_select = 0b110,
             .io_submission_queue_entry_size_log2 = @intCast(std.math.log2_int(usize, @sizeOf(Queue.SubmissionEntry))), 
@@ -255,7 +257,7 @@ const Driver = struct {
         };
     }
 
-    fn enumerateNamespaces(driver: *Driver) ![]Interface {
+    fn enumerateNamespaces(driver: *Driver) ![]Namespace {
         const namespace_list_addr = try mem.page_allocator.alloc();
         const namespace_list = mem.physToVirt([*]u32, namespace_list_addr);
         defer mem.page_allocator.free(namespace_list_addr);
@@ -272,7 +274,7 @@ const Driver = struct {
         defer mem.page_allocator.free(namespace_info_addr);
 
         const interfaces_addr = try mem.page_allocator.alloc();
-        const interfaces = mem.physToVirt(*[mem.page_size/@sizeOf(Interface)]Interface, interfaces_addr);
+        const interfaces = mem.physToVirt(*[mem.page_size/@sizeOf(Namespace)]Namespace, interfaces_addr);
 
         for (namespace_list[0..namespace_count], interfaces[0..namespace_count]) |namespace_id, *interface| {
             try driver.admin_queue.write(driver.regs, .{
@@ -282,34 +284,77 @@ const Driver = struct {
                 .dword10 = 0x00,
             });
 
-            const format_idx = @as(usize, namespace_info.formatted_size.idx_lo) << 4 | namespace_info.formatted_size.idx_lo;
+            const format_idx = @as(usize, namespace_info.formatted_size.idx_hi) << 4 | namespace_info.formatted_size.idx_lo;
             const format = namespace_info.block_formats[format_idx];
+            const block_size = @as(u64, 1) << @truncate(format.block_size_log2);
 
             interface.* = .{
                 .driver = driver,
-                .namespace = Namespace{
+                .info = .{
                     .id = namespace_id,
                     .size_blocks = namespace_info.size_blocks,
                     .capacity_blocks = namespace_info.capacity_blocks,
                     .used_blocks = namespace_info.used_blocks,
-                    .block_size = @as(u64, 1) << @truncate(format.block_size_log2),
+                    .block_size = block_size,
                     .metadata_at_end_of_block = namespace_info.formatted_size.metadata_at_end_of_block,
                     .metadata_size = format.metadata_size,
                 },
-                .vtable = .{},
+                .block_dev = .{
+                    .block_size = block_size,
+                    .vtable = .{
+                        .read = Namespace.read,
+                        .write = Namespace.write,
+                    },
+                },
             };
-
-            log.debug("{}", .{interface.namespace});
         }
 
-        return &.{};
+        return interfaces[0..namespace_count];
+    }
+
+    fn read(driver: *Driver, namespace: *const NamespaceInfo, start_block: u64, buffer: BlockDev.Buffer) !void {
+        for (buffer, 0..) |*page, i| {
+            const block = start_block + i*(mem.page_size/namespace.block_size);
+            try driver.io_queue.submitBlocking(driver.regs, .{
+                .opcode = .{.io = .read},
+                .namespace_id = namespace.id,
+                .data_ptr_1 = mem.virtToPhys(page, .{}).?,
+                .dword10 = @truncate(block),
+                .dword11 = @truncate(block >> 32),
+                .dword12 = @intCast(mem.page_size/namespace.block_size),
+            });
+        }
+    }
+
+    fn write(driver: *Driver, namespace: *const NamespaceInfo, start_block: u64, buffer: BlockDev.BufferConst) !void {
+        for (buffer, 0..) |*page, i| {
+            const block = start_block + i*(mem.page_size/namespace.block_size);
+            try driver.io_queue.submitBlocking(driver.regs, .{
+                .opcode = .{.io = .write},
+                .namespace_id = namespace.id,
+                .data_ptr_1 = mem.virtToPhys(page, .{}).?,
+                .dword10 = @truncate(block),
+                .dword11 = @truncate(block >> 32),
+                .dword12 = @intCast(mem.page_size/namespace.block_size),
+            });
+        }
     }
 };
 
-const Interface = struct {
+const Namespace= struct {
     driver: *Driver,
-    namespace: Namespace,
-    vtable: struct {},
+    info: NamespaceInfo,
+    block_dev: BlockDev,
+
+    fn read(block_dev: *BlockDev, start_block: u64, buffer: BlockDev.Buffer) BlockDev.Error!void {
+        const self: *Namespace = @fieldParentPtr("block_dev", block_dev);
+        return self.driver.read(&self.info, start_block, buffer) catch unreachable;
+    }
+
+    fn write(block_dev: *BlockDev, start_block: u64, buffer: BlockDev.BufferConst) BlockDev.Error!void {
+        const self: *Namespace = @fieldParentPtr("block_dev", block_dev);
+        return self.driver.write(&self.info, start_block, buffer) catch unreachable;
+    }
 };
 
 comptime {
@@ -322,5 +367,10 @@ comptime {
 
 pub fn init(device: *const pci.Device) !void {
     var driver = try Driver.init(device);
-    _ = try driver.enumerateNamespaces();
+    const namespaces = try driver.enumerateNamespaces();
+    var buf: [4096]u8 align(4096) = @splat(0x69);
+    namespaces[0].block_dev.write(0, @ptrCast(&buf)) catch {};
+    buf = @splat(0);
+    namespaces[0].block_dev.read(0, @ptrCast(&buf)) catch {};
+    log.debug("{x}", .{buf});
 }
