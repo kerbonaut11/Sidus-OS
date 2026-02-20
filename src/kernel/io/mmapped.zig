@@ -2,7 +2,7 @@ const std = @import("std");
 const mem = @import("../mem.zig");
 
 const l4_idx = 256+2;
-pub const start_addr = 0xffff800000000000 | (l4_idx << (12+9*3));
+pub const start_addr = mem.heap_start+mem.heap_len;
 pub const max_size = mem.gib*mem.paging.table_size;
 var l3_table: mem.paging.Table = undefined;
 var l3_idx: u9 = 0;
@@ -18,31 +18,15 @@ pub fn init() !void {
 }
 
 pub fn createSlice(comptime T: type, paddr: usize, len: usize) ![]volatile T {
-    const bytes = @sizeOf(T)*len;
     const start = std.mem.alignBackward(usize, paddr, mem.huge_page_size);
-    const end = std.mem.alignForward(usize, paddr+bytes, mem.huge_page_size);
-    const num_huge_pages = @divExact(end-start, mem.huge_page_size);
-    const result = addr + paddr%mem.huge_page_size;
+    const end = std.mem.alignForward(usize, paddr+len*@sizeOf(T), mem.huge_page_size);
+    try mem.paging.map(
+        addr, @divExact(end-start, mem.page_size),
+        .{.forced_paddr = start, .chace_disable = true, .write_through = false, .write = true}
+    );
+    addr += end-start;
 
-    var map_paddr = start;
-    for (0..num_huge_pages) |_| {
-        const l2_table = mem.physToVirt(mem.paging.Table, try l3_table[l3_idx].getOrCreateChildTable());
-        l2_table[l2_idx] = mem.paging.Entry{
-            .leaf = true,
-            .chace_disable = true,
-            .write_through = true,
-            .addr = mem.paging.Entry.createAddr(map_paddr),
-        };
-
-        map_paddr += mem.huge_page_size;
-        addr += mem.huge_page_size;
-        l2_idx +%= 1;
-        if (l2_idx == 0) {
-            l3_idx += 1;
-        }
-    }
-
-    return @as([*]volatile T, @ptrFromInt(result))[0..len];
+    return @as([*]volatile T, @ptrFromInt(start + paddr%mem.huge_page_size))[0..len];
 }
 
 

@@ -36,7 +36,7 @@ pub fn alloc() Error!usize {
     return base_addr +  idx*mem.page_size;
 }
 
-pub fn free(addr: usize) void {
-    const idx = @divExact(addr-base_addr, mem.page_size);
+pub fn free(paddr: usize) void {
+    const idx = @divExact(paddr-base_addr, mem.page_size);
     free_pages.unset(idx);
 }
