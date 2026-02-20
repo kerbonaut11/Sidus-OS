@@ -273,13 +273,14 @@ const Driver = struct {
         const namespace_info = mem.physToVirt(*NamespaceInfoRaw, namespace_info_addr);
         defer mem.phys_page_allocator.free(namespace_info_addr);
 
-        const interfaces_addr = try mem.phys_page_allocator.alloc();
-        const interfaces = mem.physToVirt(*[mem.page_size/@sizeOf(Namespace)]Namespace, interfaces_addr);
+        const namespaces = try mem.page_allocator.alloc(Namespace, namespace_count);
 
-        for (namespace_list[0..namespace_count], interfaces[0..namespace_count]) |namespace_id, *interface| {
+        for (namespaces, 0..) |*namespace, i| {
+            const id = namespace_list[i];
+
             try driver.admin_queue.write(driver.regs, .{
                 .opcode = .{.admin = .identify},
-                .namespace_id = namespace_id,
+                .namespace_id = id,
                 .data_ptr_1 = namespace_info_addr,
                 .dword10 = 0x00,
             });
@@ -288,10 +289,10 @@ const Driver = struct {
             const format = namespace_info.block_formats[format_idx];
             const block_size = @as(u64, 1) << @truncate(format.block_size_log2);
 
-            interface.* = .{
+            namespace.* = .{
                 .driver = driver,
                 .info = .{
-                    .id = namespace_id,
+                    .id = id,
                     .size_blocks = namespace_info.size_blocks,
                     .capacity_blocks = namespace_info.capacity_blocks,
                     .used_blocks = namespace_info.used_blocks,
@@ -309,7 +310,7 @@ const Driver = struct {
             };
         }
 
-        return interfaces[0..namespace_count];
+        return namespaces;
     }
 
     fn read(driver: *Driver, namespace: *const NamespaceInfo, start_block: u64, buffer: BlockDev.Buffer) !void {
