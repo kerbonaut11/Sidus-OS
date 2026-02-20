@@ -3,6 +3,7 @@ const boot = @import("boot");
 
 pub const paging = @import("mem/paging.zig");
 pub const phys_page_allocator = @import("mem/phys_page_allocator.zig");
+const PageAlloacator = @import("mem/PageAllocator.zig");
 
 pub const phys_mirror_start = boot.phys_mirror_start;
 pub const phys_mirror_len = boot.phys_mirror_len;
@@ -18,6 +19,12 @@ pub const gib = mib*1024;
 pub var init_allocator: std.mem.Allocator = undefined;
 pub var init_allocator_instance: std.heap.FixedBufferAllocator = undefined;
 var init_allocator_range_idx: usize = 0;
+
+pub var page_allocator: std.mem.Allocator = undefined;
+pub var page_allocator_instance: PageAlloacator = undefined;
+
+pub const heap_start = phys_mirror_start+phys_mirror_len;
+pub const heap_len = gib*paging.table_size;
 
 pub fn init() void {
     for (boot.info.free_phys_memory, 0..) |*range, i| {
@@ -37,4 +44,6 @@ pub fn initAllocators() void {
     init_allocator_instance = .init(&.{});
 
     phys_page_allocator.initFreeSet();
+    page_allocator_instance = PageAlloacator.init(heap_start, heap_len) catch unreachable;
+    page_allocator = page_allocator_instance.allocator();
 }
